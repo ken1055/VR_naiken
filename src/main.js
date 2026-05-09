@@ -26,7 +26,7 @@
         onURLLoaded: function (url) {
             loadAndRender(GSplatLoader.loadFromURL(app, url, function (pct) {
                 UI.showLoading('ダウンロード中... ' + pct + '%');
-            }), true);
+            }), true, url);
         },
         onVRRequested: function () {
             if (!app) return;
@@ -115,7 +115,8 @@
                     GSplatLoader.loadFromURL(app, decodedURL, function (pct) {
                         UI.showLoading('ダウンロード中... ' + pct + '%');
                     }),
-                    true  // URL由来なのでシェアボタンを表示
+                    true,      // URL由来なのでシェアボタンを表示
+                    decodedURL // コンパニオン JSON の取得に使用
                 );
             }
         } catch (e) {
@@ -142,8 +143,9 @@
     }
 
     // ---- GSplat ロード → レンダリング ----
-    // showShare: true のとき読み込み完了後にURLコピーボタンを表示
-    function loadAndRender(promise, showShare) {
+    // showShare:  true のとき読み込み完了後にURLコピーボタンを表示
+    // sourceURL:  指定時にコンパニオン JSON（同名 .json）から初期カメラを適用
+    function loadAndRender(promise, showShare, sourceURL) {
         if (!app) {
             UI.showError('PlayCanvas が初期化されていません');
             return;
@@ -152,6 +154,7 @@
         promise.then(function (asset) {
             GSplatRenderer.disposeAll();
             GSplatRenderer.create(app, asset);
+            if (sourceURL) _applyCompanionJSON(sourceURL);
             UI.hideLoading();
             UI.hideEmptyState();
             if (showShare) UI.showShareButton();
@@ -160,6 +163,28 @@
             UI.showError(err.message || String(err));
             console.error(err);
         });
+    }
+
+    // ---- コンパニオン JSON から初期カメラを適用 ----
+    // scene.ply と同じ場所にある scene.json を取得する
+    // ファイルが存在しない場合は何もしない（エラーは無視）
+    function _applyCompanionJSON(url) {
+        var base    = url.split('?')[0];
+        var jsonURL = base.replace(/\.(ply|splat)$/i, '.json');
+        if (jsonURL === base) return; // 対応拡張子なし
+
+        fetch(jsonURL)
+            .then(function (res) { return res.ok ? res.json() : null; })
+            .then(function (config) {
+                if (!config || !config.initialCamera) return;
+                var c = config.initialCamera;
+                CameraController.teleport(
+                    c.x || 0, c.y || 0, c.z || 0,
+                    c.yaw || 0, c.pitch || 0
+                );
+                console.log('[VR 内見] コンパニオン JSON から初期カメラを適用:', c);
+            })
+            .catch(function () {});
     }
 
 })();

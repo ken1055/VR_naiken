@@ -338,6 +338,25 @@ window.CameraController = (function () {
     /** オービット注視点を設定 */
     setOrbitTarget: function (x, y, z) {
       _orbitTarget.set(x, y, z);
+    },
+
+    /** 現在の位置・向きを取得（コンパニオン JSON 生成用） */
+    getState: function () {
+      return {
+        x:     Math.round(_targetPos.x * 1000) / 1000,
+        y:     Math.round(_targetPos.y * 1000) / 1000,
+        z:     Math.round(_targetPos.z * 1000) / 1000,
+        yaw:   Math.round(_targetYaw   * 10)   / 10,
+        pitch: Math.round(_targetPitch * 10)   / 10
+      };
+    },
+
+    /** 位置・向きを即時セット（コンパニオン JSON 適用用） */
+    teleport: function (x, y, z, yaw, pitch) {
+      _targetPos.set(x, y, z);  _pos.set(x, y, z);
+      _targetYaw   = yaw   || 0; _yaw   = yaw   || 0;
+      _targetPitch = pitch || 0; _pitch = pitch || 0;
+      applyTransform();
     }
   };
 }());

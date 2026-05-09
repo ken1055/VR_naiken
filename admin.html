@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者ツール | VR 内見ビューア</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #0a0a0a;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #application-canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: block;
+            touch-action: none;
+        }
+
+        #ui-root {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #ui-root > * { pointer-events: auto; }
+
+        /* ---- ロック画面 ---- */
+        #admin-lock {
+            position: fixed; inset: 0; z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(4, 4, 12, 0.97);
+            backdrop-filter: blur(20px);
+        }
+
+        #admin-lock-panel {
+            width: min(360px, 90vw);
+            background: rgba(12, 12, 28, 0.98);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 32px 28px;
+            display: flex; flex-direction: column; gap: 16px;
+            box-shadow: 0 40px 100px rgba(0,0,0,0.8);
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        #admin-lock-panel h2 {
+            font-size: 17px; font-weight: 600; letter-spacing: -0.3px;
+            color: rgba(248,250,252,0.9);
+        }
+
+        #admin-lock-label {
+            font-size: 12px;
+            color: rgba(248,250,252,0.4);
+            margin-bottom: -6px;
+        }
+
+        #admin-password-input {
+            padding: 11px 14px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            color: #f8fafc; font-size: 14px;
+            outline: none;
+            font-family: system-ui, sans-serif;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        #admin-password-input:focus {
+            border-color: rgba(245,158,11,0.6);
+            background: rgba(245,158,11,0.04);
+            box-shadow: 0 0 0 3px rgba(245,158,11,0.1);
+        }
+
+        #admin-password-input::placeholder { color: rgba(248,250,252,0.25); }
+
+        #admin-login-btn {
+            padding: 11px;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            border: none; border-radius: 10px;
+            color: #fff; font-size: 14px; font-weight: 600;
+            cursor: pointer; transition: all 0.15s;
+            font-family: system-ui, sans-serif;
+            box-shadow: 0 4px 16px rgba(245,158,11,0.3);
+        }
+
+        #admin-login-btn:hover {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 22px rgba(245,158,11,0.45);
+        }
+
+        #admin-login-btn:active { transform: translateY(0); }
+
+        #admin-login-error {
+            font-size: 12px; color: rgba(248,113,113,0.9);
+            min-height: 16px; text-align: center;
+            transition: opacity 0.2s;
+        }
+
+        #admin-lock-hint {
+            font-size: 11px; color: rgba(248,250,252,0.2);
+            text-align: center; line-height: 1.6;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            padding-top: 14px;
+        }
+
+        /* ---- 管理者バッジ（ログイン後にヘッダーへ挿入） ---- */
+        #admin-badge {
+            font-size: 10px; padding: 2px 8px; border-radius: 4px;
+            background: rgba(245,158,11,0.18);
+            color: rgba(253,230,138,0.85);
+            border: 1px solid rgba(245,158,11,0.35);
+            font-family: system-ui, sans-serif;
+            white-space: nowrap; user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- パスワードロック画面（認証前は全体を覆う） -->
+    <div id="admin-lock">
+        <div id="admin-lock-panel">
+            <h2>管理者ログイン</h2>
+            <div id="admin-lock-label">パスワード</div>
+            <input
+                type="password"
+                id="admin-password-input"
+                placeholder="パスワードを入力"
+                autocomplete="current-password"
+            >
+            <button id="admin-login-btn">ログイン</button>
+            <div id="admin-login-error"></div>
+            <div id="admin-lock-hint">
+                このページは管理者専用です。<br>
+                お客様には公開しないでください。
+            </div>
+        </div>
+    </div>
+
+    <canvas id="application-canvas"></canvas>
+    <div id="ui-root"></div>
+
+    <!-- PlayCanvas エンジン（認証前でもロード可） -->
+    <script src="https://code.playcanvas.com/playcanvas-stable.min.js"></script>
+
+    <script>
+        // ================================================================
+        // パスワード設定
+        // ※ このファイルをお客様に公開しないでください
+        // ================================================================
+        var ADMIN_PASSWORD = 'Tn090410211055'; // ← 必ず変更してください
+
+        // ================================================================
+        // ロック画面の制御
+        // ================================================================
+        var _lockEl   = document.getElementById('admin-lock');
+        var _loginBtn = document.getElementById('admin-login-btn');
+        var _pwInput  = document.getElementById('admin-password-input');
+        var _errorEl  = document.getElementById('admin-login-error');
+
+        _loginBtn.addEventListener('click', function () {
+            if (_pwInput.value === ADMIN_PASSWORD) {
+                _lockEl.style.display = 'none';
+                _loadApp();
+            } else {
+                _errorEl.textContent = 'パスワードが違います';
+                _pwInput.value = '';
+                _pwInput.focus();
+            }
+        });
+
+        _pwInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') _loginBtn.click();
+            if (_errorEl.textContent) _errorEl.textContent = '';
+        });
+
+        // ページ表示時に入力欄へフォーカス
+        window.addEventListener('load', function () { _pwInput.focus(); });
+
+        // ================================================================
+        // アプリ本体の動的ロード（認証後のみ実行）
+        // ================================================================
+        function _loadApp() {
+            var scripts = [
+                'src/gsplat-loader.js',
+                'src/gsplat-renderer.js',
+                'src/camera-controller.js',
+                'src/vr-mode.js',
+                'src/ui.js',
+                'src/main.js',
+            ];
+
+            (function loadNext(i) {
+                if (i >= scripts.length) {
+                    _addAdminUI();
+                    return;
+                }
+                var s = document.createElement('script');
+                s.src = scripts[i];
+                s.onload  = function () { loadNext(i + 1); };
+                s.onerror = function () {
+                    console.error('[Admin] スクリプト読み込み失敗:', scripts[i]);
+                };
+                document.head.appendChild(s);
+            }(0));
+        }
+
+        // ================================================================
+        // 管理者専用 UI の注入
+        // ================================================================
+        function _addAdminUI() {
+            var header = document.getElementById('vr-header');
+            if (!header) {
+                // ui.js の初期化完了を待つ
+                setTimeout(_addAdminUI, 50);
+                return;
+            }
+
+            // 管理者バッジ
+            var badge = document.createElement('span');
+            badge.id = 'admin-badge';
+            badge.textContent = '管理者モード';
+
+            // 「位置をコピー」ボタン
+            var copyBtn = document.createElement('button');
+            copyBtn.id = 'admin-copy-pos-btn';
+            copyBtn.className = 'vr-btn';
+            copyBtn.textContent = '位置をコピー';
+            copyBtn.style.cssText = [
+                'background:rgba(245,158,11,0.12);',
+                'border-color:rgba(245,158,11,0.35);',
+                'color:rgba(253,230,138,0.9);',
+            ].join('');
+
+            copyBtn.addEventListener('click', function () {
+                var state  = window.CameraController.getState();
+                var json   = JSON.stringify({ initialCamera: state }, null, 2);
+
+                navigator.clipboard.writeText(json).then(function () {
+                    copyBtn.textContent = 'コピー完了!';
+                    setTimeout(function () { copyBtn.textContent = '位置をコピー'; }, 2000);
+                }).catch(function () {
+                    // クリップボード API が使えない環境向けフォールバック
+                    prompt('以下の JSON をコピーしてファイルに保存してください:', json);
+                });
+            });
+
+            // 全画面ボタンの直前に挿入
+            var fsBtn = document.getElementById('vr-fullscreen-btn');
+            if (fsBtn) {
+                header.insertBefore(copyBtn, fsBtn);
+                header.insertBefore(badge,   fsBtn);
+            } else {
+                header.appendChild(badge);
+                header.appendChild(copyBtn);
+            }
+        }
+    </script>
+</body>
+</html>
