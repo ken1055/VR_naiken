@@ -462,7 +462,7 @@ window.UI = (function () {
             root.appendChild(_elToastCont);
 
             // ===== 操作説明 =====
-            var _isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+            var _isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
             var _helpRows = _isTouchDevice ? [
                 '<tr><td>1本指ドラッグ</td><td>視点回転</td></tr>',
                 '<tr><td>2本指ドラッグ</td><td>前後左右移動</td></tr>',
