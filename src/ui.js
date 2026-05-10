@@ -138,6 +138,29 @@ window.UI = (function () {
         '#vr-dropzone .drop-icon { font-size: 26px; margin-bottom: 10px; display: block; opacity: 0.6; }',
         '#vr-dropzone .drop-sub { font-size: 11px; margin-top: 5px; opacity: 0.55; }',
 
+        /* LCC フォルダ読み込みセクション */
+        '#vr-lcc-section { margin-top: 14px; }',
+        '#vr-lcc-divider {',
+        '  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;',
+        '  color: rgba(248,250,252,0.2); font-size: 11px; }',
+        '#vr-lcc-divider::before, #vr-lcc-divider::after {',
+        '  content: ""; flex: 1;',
+        '  border-top: 1px solid rgba(255,255,255,0.07); }',
+        '#vr-lcc-btn {',
+        '  width: 100%; padding: 10px;',
+        '  background: rgba(139,92,246,0.1);',
+        '  border: 1px dashed rgba(139,92,246,0.35);',
+        '  border-radius: 10px;',
+        '  color: rgba(196,181,253,0.85); font-size: 13px; font-weight: 500;',
+        '  cursor: pointer; transition: all 0.15s;',
+        '  font-family: system-ui, sans-serif; }',
+        '#vr-lcc-btn:hover {',
+        '  background: rgba(139,92,246,0.18);',
+        '  border-color: rgba(139,92,246,0.6); color: #fff; }',
+        '#vr-lcc-hint {',
+        '  margin-top: 8px; font-size: 11px;',
+        '  color: rgba(248,250,252,0.25); line-height: 1.6; }',
+
         /* スピナー */
         '#vr-loading {',
         '  position: fixed; inset: 0; z-index: 200;',
@@ -251,6 +274,7 @@ window.UI = (function () {
     var _elHelpOverlay = null;
     var _helpTimer     = null;
     var _callbacks     = {};
+    var _elLCCInput    = null;
 
     var _elShareBtn   = null;
     var _elEmptyState = null;
@@ -291,6 +315,12 @@ window.UI = (function () {
             return;
         }
         if (_callbacks.onFileLoaded) _callbacks.onFileLoaded(file);
+        if (_elPanel) _elPanel.classList.add('hidden');
+    }
+
+    function triggerLCCLoad(files) {
+        if (!files || files.length === 0) return;
+        if (_callbacks.onLCCLoaded) _callbacks.onLCCLoaded(files);
         if (_elPanel) _elPanel.classList.add('hidden');
     }
 
@@ -427,6 +457,27 @@ window.UI = (function () {
                 if (e.dataTransfer.files[0]) triggerLoad(e.dataTransfer.files[0]);
             });
             paneFile.appendChild(_elDropzone);
+
+            // LCC フォルダ読み込みセクション
+            _elLCCInput = el('input', { type: 'file', style: 'display:none' });
+            _elLCCInput.setAttribute('webkitdirectory', '');
+            _elLCCInput.setAttribute('multiple', '');
+            _elLCCInput.addEventListener('change', function () {
+                if (_elLCCInput.files.length > 0) triggerLCCLoad(_elLCCInput.files);
+                _elLCCInput.value = '';
+            });
+
+            var lccBtn = el('button', { id: 'vr-lcc-btn', textContent: 'LCC フォルダを開く (portalcam)' });
+            lccBtn.addEventListener('click', function () { _elLCCInput.click(); });
+
+            paneFile.appendChild(el('div', { id: 'vr-lcc-section' }, [
+                el('div', { id: 'vr-lcc-divider', textContent: 'または LCC 形式' }),
+                _elLCCInput,
+                lccBtn,
+                el('div', { id: 'vr-lcc-hint',
+                    textContent: 'portalcam が出力した LCC フォルダ（meta.lcc / Data.bin を含む）を選択してください。'
+                }),
+            ]));
 
             // canvas 全体にもドロップ対応（app が null の場合は document.body に対して設定）
             var dropTarget = (app && app.graphicsDevice && app.graphicsDevice.canvas)

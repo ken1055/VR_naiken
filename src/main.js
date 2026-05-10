@@ -31,6 +31,12 @@
                 UI.showLoading('ダウンロード中... ' + pct + '%');
             }), true, url);
         },
+        onLCCLoaded: function (files) {
+            if (!app) return;
+            loadAndRender(GSplatLoader.loadFromLCCFiles(app, files, function (pct) {
+                UI.showLoading('LCC 変換中... ' + pct + '%');
+            }), false);
+        },
         onVRRequested: function () {
             if (!app) return;
             if (VRMode.isActive()) VRMode.exit();
@@ -141,6 +147,12 @@
                 loadAndRender(GSplatLoader.loadFromURL(app, url, function (pct) {
                     UI.showLoading('ダウンロード中... ' + pct + '%');
                 }), true);
+            },
+            onLCCLoaded: function (files) {
+                if (!app) return;
+                loadAndRender(GSplatLoader.loadFromLCCFiles(app, files, function (pct) {
+                    UI.showLoading('LCC 変換中... ' + pct + '%');
+                }), false);
             },
         });
     }

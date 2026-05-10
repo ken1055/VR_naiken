@@ -39,7 +39,7 @@
      */
     function _isSupportedFile(filename) {
         var lower = (filename || '').toLowerCase();
-        return lower.endsWith('.ply') || lower.endsWith('.splat');
+        return lower.endsWith('.ply') || lower.endsWith('.splat') || lower.endsWith('.lcc');
     }
 
     /**
@@ -225,6 +225,68 @@
 
                 app.assets.add(asset);
                 app.assets.load(asset);
+            });
+        },
+
+        /**
+         * LCC フォルダ（FileList）からアセットをロード
+         * LCCParser で .splat バッファに変換してから PlayCanvas に渡す
+         *
+         * @param {pc.Application} app
+         * @param {FileList}        files       webkitdirectory input から取得したファイル一覧
+         * @param {function}       [onProgress] 進捗コールバック (percent: 0–100) => void
+         * @returns {Promise<pc.Asset>}
+         */
+        loadFromLCCFiles: function (app, files, onProgress) {
+            if (!window.LCCParser) {
+                return Promise.reject(new Error('LCCParser が読み込まれていません'));
+            }
+            if (!_isWebGL2Supported()) {
+                return Promise.reject(new Error(
+                    'このブラウザは WebGL2 に対応していないため、3DGS を表示できません。'
+                ));
+            }
+            if (!app || typeof app.assets === 'undefined') {
+                return Promise.reject(new Error('有効な PlayCanvas Application インスタンスを指定してください。'));
+            }
+
+            return window.LCCParser.loadFromFiles(files, function (pct) {
+                if (typeof onProgress === 'function') onProgress(Math.round(pct * 0.7)); // 変換 70%
+            }).then(function (result) {
+                var splatName  = result.name;
+                var objectURL  = null;
+                var cleaned    = false;
+
+                function cleanup() {
+                    if (!cleaned) { cleaned = true; if (objectURL) URL.revokeObjectURL(objectURL); }
+                }
+
+                return new Promise(function (resolve, reject) {
+                    try {
+                        var blob = new Blob([result.splatBuffer], { type: 'application/octet-stream' });
+                        objectURL = URL.createObjectURL(blob);
+                    } catch (e) {
+                        reject(new Error('Blob の生成に失敗しました: ' + e.message));
+                        return;
+                    }
+
+                    var asset = new pc.Asset(splatName, 'gsplat', { url: objectURL, filename: splatName });
+
+                    if (typeof onProgress === 'function') {
+                        asset.on('progress', function (received, length) {
+                            if (length > 0) onProgress(70 + Math.round(received / length * 30));
+                        });
+                    }
+
+                    asset.ready(function (loadedAsset) { cleanup(); resolve(loadedAsset); });
+                    asset.on('error', function (err) {
+                        cleanup();
+                        reject(new Error('LCC アセットの読み込みに失敗しました: ' + (err || '')));
+                    });
+
+                    app.assets.add(asset);
+                    app.assets.load(asset);
+                });
             });
         },
 
