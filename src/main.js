@@ -16,6 +16,9 @@
     var app = null;
     var cameraEntity = null;
 
+    // 管理者ページから参照: 現在読み込まれているシーンの保存先 JSON ファイル名
+    window._adminCurrentJSONName = null;
+
     // ---- UI を最初に起動（PlayCanvas 失敗でも表示される）----
     UI.init(null, {
         onFileLoaded: function (file) {
@@ -155,6 +158,7 @@
             GSplatRenderer.disposeAll();
             GSplatRenderer.create(app, asset);
             if (sourceURL) _applyCompanionJSON(sourceURL);
+            _updateAdminCurrentJSON(asset.name, sourceURL);
             UI.hideLoading();
             UI.hideEmptyState();
             if (showShare) UI.showShareButton();
@@ -163,6 +167,12 @@
             UI.showError(err.message || String(err));
             console.error(err);
         });
+    }
+
+    // ---- 管理者用: 現在のシーンに対応する JSON ファイル名を更新 ----
+    function _updateAdminCurrentJSON(assetName, sourceURL) {
+        var base = (sourceURL ? sourceURL.split('?')[0].split('/').pop() : assetName) || 'scene';
+        window._adminCurrentJSONName = base.replace(/\.(ply|splat|lcc)$/i, '.json');
     }
 
     // ---- コンパニオン JSON から初期カメラを適用 ----
