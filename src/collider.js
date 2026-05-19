@@ -95,51 +95,6 @@ window.Collider = (function () {
         return { pts: out, n: n };
     }
 
-    // ---- ボクセルグリッド + 床高さマップ構築 ----
-    function buildGrid(pts, n) {
-        var i, c;
-        var minX =  Infinity, maxX = -Infinity;
-        var minY =  Infinity, maxY = -Infinity;
-        var minZ =  Infinity, maxZ = -Infinity;
-
-        // バウンディングボックス計算
-        for (i = 0; i < n; i++) {
-            c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
-            if (c.cx < minX) minX = c.cx; if (c.cx > maxX) maxX = c.cx;
-            if (c.cy < minY) minY = c.cy; if (c.cy > maxY) maxY = c.cy;
-            if (c.cz < minZ) minZ = c.cz; if (c.cz > maxZ) maxZ = c.cz;
-        }
-
-        var pad = 0.5;
-        minX -= pad; maxX += pad;
-        minY -= pad; maxY += pad;
-        minZ -= pad; maxZ += pad;
-
-        var sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
-        _bounds = { minX:minX, maxX:maxX, minY:minY, maxY:maxY, minZ:minZ, maxZ:maxZ, sx:sx, sy:sy, sz:sz };
-
-        // ボクセル占有フラグ
-        _voxels = new Uint8Array(GRID * GRID * GRID);
-        for (i = 0; i < n; i++) {
-            c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
-            _voxels[vi(toVox(c.cx, minX, sx), toVox(c.cy, minY, sy), toVox(c.cz, minZ, sz))] = 1;
-        }
-
-        // 床高さマップ: XZ 列ごとに最上の占有 Y ボクセルをワールド Y に変換
-        _hmap = new Float32Array(GRID2).fill(minY);
-        for (var vz = 0; vz < GRID; vz++) {
-            for (var vx = 0; vx < GRID; vx++) {
-                var topVY = -1;
-                for (var vy = 0; vy < GRID; vy++) {
-                    if (_voxels[vi(vx, vy, vz)]) topVY = vy;
-                }
-                _hmap[vx + vz * GRID] = topVY >= 0 ? minY + (topVY / (GRID - 1)) * sy : minY;
-            }
-        }
-
-        _ready = true;
-    }
-
     // ---- 公開 API ----
     return {
         isReady:   function () { return _ready; },
@@ -147,7 +102,8 @@ window.Collider = (function () {
         setEnabled: function (v) { _enabled = !!v; },
 
         /**
-         * バッファから非同期でコライダーを構築
+         * バッファから非同期でコライダーを構築（分割処理でブラウザをブロックしない）
+         * Phase1: PLY パース  Phase2: BBOX 計算  Phase3: ボクセル埋め  Phase4: 床高さマップ
          * @param {ArrayBuffer} buffer
          * @param {string} filename  (.ply または .splat)
          * @param {function} onProgress  (percent:number, msg:string) => void
@@ -159,27 +115,112 @@ window.Collider = (function () {
             _hmap   = null;
             _bounds = null;
 
+            var BBOX_BATCH  = 8000;  // 1tick あたりのスプラット数
+            var VOXEL_BATCH = 8000;
+            var HMAP_ROWS   = 8;     // 1tick あたりの Z 行数 (8×96×96 = 73,728 回)
+
+            // --- Phase 1: パース ---
             setTimeout(function () {
+                var pts, n;
                 try {
                     if (onProgress) onProgress(5, 'ファイルをパース中...');
-                    var ext    = (filename || '').split('.').pop().toLowerCase();
+                    var ext = (filename || '').split('.').pop().toLowerCase();
                     var parsed = ext === 'splat' ? parseSplat(buffer) : parsePLY(buffer);
-
-                    if (onProgress) onProgress(40, 'ボクセルグリッドを構築中...');
-
-                    // 構築処理を次の tick に渡して UI を更新させる
-                    setTimeout(function () {
-                        try {
-                            buildGrid(parsed.pts, parsed.n);
-                            if (onProgress) onProgress(100, '完了');
-                            if (onDone) onDone(null);
-                        } catch (e2) {
-                            if (onDone) onDone(e2);
-                        }
-                    }, 0);
+                    pts = parsed.pts;
+                    n   = parsed.n;
                 } catch (e) {
                     if (onDone) onDone(e);
+                    return;
                 }
+
+                // --- Phase 2: バウンディングボックス（分割）---
+                var minX =  Infinity, maxX = -Infinity;
+                var minY =  Infinity, maxY = -Infinity;
+                var minZ =  Infinity, maxZ = -Infinity;
+                var bboxIdx = 0;
+
+                function bboxStep() {
+                    var end = Math.min(bboxIdx + BBOX_BATCH, n);
+                    for (var i = bboxIdx; i < end; i++) {
+                        var c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
+                        if (c.cx < minX) minX = c.cx; if (c.cx > maxX) maxX = c.cx;
+                        if (c.cy < minY) minY = c.cy; if (c.cy > maxY) maxY = c.cy;
+                        if (c.cz < minZ) minZ = c.cz; if (c.cz > maxZ) maxZ = c.cz;
+                    }
+                    bboxIdx = end;
+                    if (bboxIdx < n) {
+                        if (onProgress) onProgress(10 + Math.round(bboxIdx / n * 20), 'バウンディングボックス計算中...');
+                        setTimeout(bboxStep, 0);
+                        return;
+                    }
+
+                    // BBOX 完了 → bounds 確定
+                    var pad = 0.5;
+                    minX -= pad; maxX += pad;
+                    minY -= pad; maxY += pad;
+                    minZ -= pad; maxZ += pad;
+                    var sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
+                    _bounds = { minX:minX, maxX:maxX, minY:minY, maxY:maxY,
+                                minZ:minZ, maxZ:maxZ, sx:sx, sy:sy, sz:sz };
+                    _voxels = new Uint8Array(GRID * GRID * GRID);
+
+                    if (onProgress) onProgress(30, 'ボクセル占有フラグを構築中...');
+                    setTimeout(voxelStep, 0);
+                }
+
+                // --- Phase 3: ボクセル埋め（分割）---
+                var voxelIdx = 0;
+
+                function voxelStep() {
+                    var end = Math.min(voxelIdx + VOXEL_BATCH, n);
+                    var b = _bounds;
+                    for (var i = voxelIdx; i < end; i++) {
+                        var c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
+                        _voxels[vi(toVox(c.cx, b.minX, b.sx), toVox(c.cy, b.minY, b.sy), toVox(c.cz, b.minZ, b.sz))] = 1;
+                    }
+                    voxelIdx = end;
+                    if (voxelIdx < n) {
+                        if (onProgress) onProgress(30 + Math.round(voxelIdx / n * 30), 'ボクセル占有フラグを構築中...');
+                        setTimeout(voxelStep, 0);
+                        return;
+                    }
+
+                    // ボクセル完了 → 高さマップへ
+                    _hmap = new Float32Array(GRID2).fill(_bounds.minY);
+                    if (onProgress) onProgress(60, '床高さマップを構築中...');
+                    setTimeout(hmapStep, 0);
+                }
+
+                // --- Phase 4: 床高さマップ（分割）---
+                var hmapVZ = 0;
+
+                function hmapStep() {
+                    var end = Math.min(hmapVZ + HMAP_ROWS, GRID);
+                    var b = _bounds;
+                    for (var vz = hmapVZ; vz < end; vz++) {
+                        for (var vx = 0; vx < GRID; vx++) {
+                            var topVY = -1;
+                            for (var vy = 0; vy < GRID; vy++) {
+                                if (_voxels[vi(vx, vy, vz)]) topVY = vy;
+                            }
+                            _hmap[vx + vz * GRID] = topVY >= 0 ? b.minY + (topVY / (GRID - 1)) * b.sy : b.minY;
+                        }
+                    }
+                    hmapVZ = end;
+                    if (hmapVZ < GRID) {
+                        if (onProgress) onProgress(60 + Math.round(hmapVZ / GRID * 40), '床高さマップを構築中...');
+                        setTimeout(hmapStep, 0);
+                        return;
+                    }
+
+                    // 全フェーズ完了
+                    _ready = true;
+                    if (onProgress) onProgress(100, '完了');
+                    if (onDone) onDone(null);
+                }
+
+                if (onProgress) onProgress(10, 'バウンディングボックス計算中...');
+                setTimeout(bboxStep, 0);
             }, 0);
         },
 

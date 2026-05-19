@@ -306,6 +306,19 @@ window.UI = (function () {
         /* フルスクリーンボタン */
         '#vr-fullscreen-btn { padding: 5px 9px; min-width: 0; }',
 
+        /* ステータスバー（バックグラウンド処理の進捗表示）*/
+        '#vr-status-bar {',
+        '  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);',
+        '  z-index: 115; white-space: nowrap;',
+        '  padding: 8px 18px; border-radius: 99px;',
+        '  background: rgba(0,4,12,0.92);',
+        '  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);',
+        '  border: 1px solid rgba(0,212,170,0.2);',
+        '  color: rgba(0,212,170,0.9); font-size: 12px;',
+        '  font-family: system-ui, sans-serif; pointer-events: none;',
+        '  transition: opacity 0.3s; }',
+        '#vr-status-bar.hidden { display: none; }',
+
         /* エンプティステート */
         '#vr-empty-state {',
         '  position: fixed; inset: 0; z-index: 50;',
@@ -349,6 +362,7 @@ window.UI = (function () {
     var _elShareBtn   = null;
     var _elEmptyState = null;
     var _elTitleEl    = null;
+    var _elStatusBar  = null;
 
     // ---- ユーティリティ ----
     function el(tag, attrs, children) {
@@ -628,6 +642,9 @@ window.UI = (function () {
             ]);
             root.appendChild(_elEmptyState);
 
+            _elStatusBar = el('div', { id: 'vr-status-bar', className: 'hidden' });
+            root.appendChild(_elStatusBar);
+
             showHelp();
         },
 
@@ -699,6 +716,16 @@ window.UI = (function () {
 
         showShareButton: function () {
             if (_elShareBtn) _elShareBtn.classList.remove('hidden');
+        },
+
+        showStatus: function (msg) {
+            if (!_elStatusBar) return;
+            _elStatusBar.textContent = msg;
+            _elStatusBar.classList.remove('hidden');
+        },
+
+        hideStatus: function () {
+            if (_elStatusBar) _elStatusBar.classList.add('hidden');
         },
     };
 }());

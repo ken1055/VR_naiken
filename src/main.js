@@ -201,24 +201,27 @@
                 CameraController.teleport(sp.x, sp.y, sp.z, 0, 0);
             }
 
+            UI.hideLoading();
             UI.hideEmptyState();
 
-            // コライダーを PLY データから非同期構築
+            // コライダーを PLY データから非同期構築（シーン表示後に開始）
             if (result.plyBuffer && window.Collider) {
                 Collider.reset();
-                UI.showLoading('コライダー構築中...');
-                Collider.buildAsync(
-                    result.plyBuffer,
-                    result.asset.name,
-                    function (pct, msg) { UI.showLoading('コライダー: ' + (msg || pct + '%')); },
-                    function (err) {
-                        if (err) console.warn('[LCC] コライダー構築失敗:', err);
-                        else console.log('[LCC] コライダー構築完了');
-                        UI.hideLoading();
-                    }
-                );
-            } else {
-                UI.hideLoading();
+                var _plyBuf = result.plyBuffer;
+                var _assetName = result.asset.name;
+                setTimeout(function () {
+                    UI.showStatus('コライダー構築中...');
+                    Collider.buildAsync(
+                        _plyBuf,
+                        _assetName,
+                        function (pct, msg) { UI.showStatus('コライダー: ' + (msg || pct + '%')); },
+                        function (err) {
+                            if (err) console.warn('[LCC] コライダー構築失敗:', err);
+                            else console.log('[LCC] コライダー構築完了');
+                            UI.hideStatus();
+                        }
+                    );
+                }, 500);
             }
 
             _updateAdminCurrentJSON(result.asset.name, null);
