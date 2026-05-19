@@ -77,54 +77,98 @@ window.LCCParser = (function () {
         return result;
     }
 
-    // ---- LCC Data.bin → .splat ArrayBuffer 変換 ----
-    function convertToSplat(dataBin, meta) {
+    // SH 零次係数スケール (3DGS 標準)
+    var C0 = 0.28209479177387814;
+
+    // ---- LCC data.bin → PLY ArrayBuffer 変換 ----
+    // PlayCanvas gsplat は PLY 形式のみ安定対応のため PLY を生成する
+    function convertToPLY(dataBin, meta) {
         var n   = meta.totalSplats || Math.floor(dataBin.byteLength / 32);
         var src = new DataView(dataBin);
-        var dst = new DataView(new ArrayBuffer(n * 32));
         var sm  = meta.scaleMin;
         var sx  = meta.scaleMax;
 
+        // PLY ヘッダー (ASCII)
+        var header = [
+            'ply',
+            'format binary_little_endian 1.0',
+            'element vertex ' + n,
+            'property float x',
+            'property float y',
+            'property float z',
+            'property float f_dc_0',
+            'property float f_dc_1',
+            'property float f_dc_2',
+            'property float opacity',
+            'property float scale_0',
+            'property float scale_1',
+            'property float scale_2',
+            'property float rot_0',
+            'property float rot_1',
+            'property float rot_2',
+            'property float rot_3',
+            'end_header',
+            ''
+        ].join('\n');
+
+        var headerBytes = new Uint8Array(header.length);
+        for (var hi = 0; hi < header.length; hi++) {
+            headerBytes[hi] = header.charCodeAt(hi);
+        }
+
+        var BYTES_PER_VERTEX = 14 * 4; // 14 × float32
+        var outBuf = new ArrayBuffer(headerBytes.length + n * BYTES_PER_VERTEX);
+        new Uint8Array(outBuf).set(headerBytes, 0);
+        var dst = new DataView(outBuf, headerBytes.length);
+
         for (var i = 0; i < n; i++) {
-            var s = i * 32; // Data.bin 側オフセット
-            var d = i * 32; // .splat 側オフセット
+            var s = i * 32;
+            var d = i * BYTES_PER_VERTEX;
 
-            // Position float32×3 → .splat bytes 0–11 (直接コピー)
-            dst.setFloat32(d,      src.getFloat32(s,     true), true);
-            dst.setFloat32(d + 4,  src.getFloat32(s + 4, true), true);
-            dst.setFloat32(d + 8,  src.getFloat32(s + 8, true), true);
+            // Position
+            dst.setFloat32(d,     src.getFloat32(s,     true), true);
+            dst.setFloat32(d + 4, src.getFloat32(s + 4, true), true);
+            dst.setFloat32(d + 8, src.getFloat32(s + 8, true), true);
 
-            // Scale uint16×3 → .splat bytes 12–23
+            // Color uint32 → SH DC 係数 (f_dc = (rgb - 0.5) / C0)
+            var c = src.getUint32(s + 12, true);
+            var r = ((c      ) & 0xFF) / 255.0;
+            var g = ((c >>  8) & 0xFF) / 255.0;
+            var b = ((c >> 16) & 0xFF) / 255.0;
+            var a = ((c >> 24) & 0xFF) / 255.0;
+            dst.setFloat32(d + 12, (r - 0.5) / C0, true);
+            dst.setFloat32(d + 16, (g - 0.5) / C0, true);
+            dst.setFloat32(d + 20, (b - 0.5) / C0, true);
+
+            // Opacity uint8 → logit (sigmoid の逆)
+            var alpha = Math.max(1 / 255, Math.min(254 / 255, a));
+            dst.setFloat32(d + 24, Math.log(alpha / (1.0 - alpha)), true);
+
+            // Scale uint16 → log scale
             var ls0 = sm[0] + (sx[0] - sm[0]) * src.getUint16(s + 16, true) / 65535.0;
             var ls1 = sm[1] + (sx[1] - sm[1]) * src.getUint16(s + 18, true) / 65535.0;
             var ls2 = sm[2] + (sx[2] - sm[2]) * src.getUint16(s + 20, true) / 65535.0;
-            // 旧形式は log 空間 → exp で線形化、新形式は既に線形
             if (meta.useLogScale) {
-                dst.setFloat32(d + 12, Math.exp(ls0), true);
-                dst.setFloat32(d + 16, Math.exp(ls1), true);
-                dst.setFloat32(d + 20, Math.exp(ls2), true);
+                // 旧形式: 既に log 値
+                dst.setFloat32(d + 28, ls0, true);
+                dst.setFloat32(d + 32, ls1, true);
+                dst.setFloat32(d + 36, ls2, true);
             } else {
-                dst.setFloat32(d + 12, ls0, true);
-                dst.setFloat32(d + 16, ls1, true);
-                dst.setFloat32(d + 20, ls2, true);
+                // 新形式: 線形値 → log
+                dst.setFloat32(d + 28, Math.log(Math.max(1e-6, ls0)), true);
+                dst.setFloat32(d + 32, Math.log(Math.max(1e-6, ls1)), true);
+                dst.setFloat32(d + 36, Math.log(Math.max(1e-6, ls2)), true);
             }
 
-            // Color uint32 RGBA → .splat bytes 24–27
-            var c = src.getUint32(s + 12, true);
-            dst.setUint8(d + 24, (c)       & 0xFF); // R
-            dst.setUint8(d + 25, (c >>  8) & 0xFF); // G
-            dst.setUint8(d + 26, (c >> 16) & 0xFF); // B
-            dst.setUint8(d + 27, (c >> 24) & 0xFF); // A
-
-            // Rotation uint32 → .splat bytes 28–31 (uint8, offset 128)
+            // Rotation uint32 → float32 quaternion
             var q = decodeRotation(src.getUint32(s + 22, true));
-            dst.setUint8(d + 28, Math.min(255, Math.max(0, (q[0] * 128 + 128) | 0)));
-            dst.setUint8(d + 29, Math.min(255, Math.max(0, (q[1] * 128 + 128) | 0)));
-            dst.setUint8(d + 30, Math.min(255, Math.max(0, (q[2] * 128 + 128) | 0)));
-            dst.setUint8(d + 31, Math.min(255, Math.max(0, (q[3] * 128 + 128) | 0)));
+            dst.setFloat32(d + 40, q[0], true);
+            dst.setFloat32(d + 44, q[1], true);
+            dst.setFloat32(d + 48, q[2], true);
+            dst.setFloat32(d + 52, q[3], true);
         }
 
-        return dst.buffer;
+        return outBuf;
     }
 
     // ---- 公開 API ----
@@ -174,13 +218,13 @@ window.LCCParser = (function () {
                     r2.onerror = function () { reject(new Error('data.bin の読み込みに失敗しました')); };
                     r2.onload = function (e2) {
                         if (onProgress) onProgress(60);
-                        var splatBuffer;
-                        try { splatBuffer = convertToSplat(e2.target.result, meta); }
-                        catch (err2) { reject(new Error('スプラット変換に失敗: ' + err2.message)); return; }
+                        var plyBuffer;
+                        try { plyBuffer = convertToPLY(e2.target.result, meta); }
+                        catch (err2) { reject(new Error('PLY 変換に失敗: ' + err2.message)); return; }
                         if (onProgress) onProgress(100);
                         resolve({
-                            splatBuffer: splatBuffer,
-                            name: (folderName || 'scene') + '.splat'
+                            splatBuffer: plyBuffer,
+                            name: (folderName || 'scene') + '.ply'
                         });
                     };
                     r2.readAsArrayBuffer(dataFile);

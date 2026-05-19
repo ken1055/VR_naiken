@@ -567,6 +567,8 @@ window.UI = (function () {
             setTimeout(function () { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 4100);
         },
 
+        showTooltip: function (msg) { this.showInfo(msg); },
+
         setVRButtonState: function (state) {
             if (!_elVRBtn) return;
             _elVRBtn.classList.remove('vr-btn--primary', 'vr-btn--vr-active');
