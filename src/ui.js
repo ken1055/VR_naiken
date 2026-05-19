@@ -475,7 +475,7 @@ window.UI = (function () {
                 _elLCCInput,
                 lccBtn,
                 el('div', { id: 'vr-lcc-hint',
-                    textContent: 'portalcam が出力した LCC フォルダ（meta.lcc / Data.bin を含む）を選択してください。'
+                    textContent: 'LCC フォルダ（*.lcc / data.bin を含む）を選択してください。旧形式（meta.lcc / Data.bin）も対応しています。'
                 }),
             ]));
 

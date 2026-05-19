@@ -1,18 +1,21 @@
 /**
  * lcc-parser.js — XGRIDS LCC (Lixel CyberColor) フォーマットパーサー
- * LCC フォルダパッケージ（meta.lcc + Data.bin）を読み込み、
- * PlayCanvas が扱える .splat 形式の ArrayBuffer に変換する。
+ * LCC フォルダパッケージを読み込み、PlayCanvas が扱える .splat 形式の ArrayBuffer に変換する。
  *
- * LCC Data.bin の 1 スプラットあたりのレイアウト（32 bytes）:
+ * 対応フォーマット:
+ *   旧形式: meta.lcc (JSON) + Data.bin  — スケールは log 空間 (uint16 → log lerp → exp)
+ *   新形式 v5.0: *.lcc  (JSON, encoding:"COMPRESS") + data.bin — スケールは線形 (uint16 → 直接 lerp)
+ *
+ * data.bin の 1 スプラットあたりのレイアウト（32 bytes）:
  *   [0–11]   Position XYZ  float32×3
  *   [12–15]  Color RGBA    uint32 packed (R=bits0-7, G=8-15, B=16-23, A=24-31)
- *   [16–21]  Scale XYZ     uint16×3 (meta.lcc の min/max で線形補間 → log スケール値)
+ *   [16–21]  Scale XYZ     uint16×3 (*.lcc の min/max で線形補間)
  *   [22–25]  Rotation      uint32 (10-10-10-2 ビット圧縮四元数)
  *   [26–31]  (予約)
  *
  * 出力 .splat の 1 スプラットあたりのレイアウト（32 bytes / Antimatter15 形式）:
  *   [0–11]   Position XYZ  float32×3
- *   [12–23]  Scale XYZ     float32×3 (exp(log_scale))
+ *   [12–23]  Scale XYZ     float32×3
  *   [24–27]  Color RGBA    uint8×4
  *   [28–31]  Rotation XYZW uint8×4 ([-1,1] → [0,255], offset 128)
  */
@@ -22,13 +25,17 @@ window.LCCParser = (function () {
     var SQRT2     = Math.sqrt(2.0);
     var INV_SQRT2 = 1.0 / SQRT2;
 
-    // ---- meta.lcc の解析 ----
+    // ---- メタ JSON の解析 ----
     function parseMeta(text) {
         var meta = JSON.parse(text);
 
-        // スケールの min/max (log スケール値、デフォルト [-10, 10])
-        var scaleMin = [-10, -10, -10];
-        var scaleMax = [ 10,  10,  10];
+        // v5.0 / encoding:"COMPRESS" は線形スケール、旧形式は log スケール
+        var isNewFormat = (meta.encoding === 'COMPRESS') ||
+                          (parseFloat(meta.version || '0') >= 5.0);
+
+        // スケールの min/max (旧形式はlog値でデフォルト[-10,10]、新形式は実スケール値)
+        var scaleMin = isNewFormat ? [0, 0, 0] : [-10, -10, -10];
+        var scaleMax = isNewFormat ? [1, 1, 1] : [ 10,  10,  10];
 
         (meta.attributes || []).forEach(function (attr) {
             if (attr.name === 'scale' && Array.isArray(attr.min) && Array.isArray(attr.max)) {
@@ -38,9 +45,10 @@ window.LCCParser = (function () {
         });
 
         return {
-            totalSplats: meta.totalSplats || 0,
-            scaleMin:    scaleMin,
-            scaleMax:    scaleMax
+            totalSplats:  meta.totalSplats || 0,
+            scaleMin:     scaleMin,
+            scaleMax:     scaleMax,
+            useLogScale:  !isNewFormat
         };
     }
 
@@ -86,13 +94,20 @@ window.LCCParser = (function () {
             dst.setFloat32(d + 4,  src.getFloat32(s + 4, true), true);
             dst.setFloat32(d + 8,  src.getFloat32(s + 8, true), true);
 
-            // Scale uint16×3 → .splat bytes 12–23 (log→linear に変換)
+            // Scale uint16×3 → .splat bytes 12–23
             var ls0 = sm[0] + (sx[0] - sm[0]) * src.getUint16(s + 16, true) / 65535.0;
             var ls1 = sm[1] + (sx[1] - sm[1]) * src.getUint16(s + 18, true) / 65535.0;
             var ls2 = sm[2] + (sx[2] - sm[2]) * src.getUint16(s + 20, true) / 65535.0;
-            dst.setFloat32(d + 12, Math.exp(ls0), true);
-            dst.setFloat32(d + 16, Math.exp(ls1), true);
-            dst.setFloat32(d + 20, Math.exp(ls2), true);
+            // 旧形式は log 空間 → exp で線形化、新形式は既に線形
+            if (meta.useLogScale) {
+                dst.setFloat32(d + 12, Math.exp(ls0), true);
+                dst.setFloat32(d + 16, Math.exp(ls1), true);
+                dst.setFloat32(d + 20, Math.exp(ls2), true);
+            } else {
+                dst.setFloat32(d + 12, ls0, true);
+                dst.setFloat32(d + 16, ls1, true);
+                dst.setFloat32(d + 20, ls2, true);
+            }
 
             // Color uint32 RGBA → .splat bytes 24–27
             var c = src.getUint32(s + 12, true);
@@ -129,27 +144,34 @@ window.LCCParser = (function () {
                     var f     = files[i];
                     var parts = (f.webkitRelativePath || f.name).split('/');
                     if (!folderName && parts.length > 1) folderName = parts[0];
-                    var fname = parts[parts.length - 1];
-                    if (fname === 'meta.lcc') metaFile = f;
-                    else if (fname === 'Data.bin') dataFile = f;
+                    var fname      = parts[parts.length - 1];
+                    var fnameLower = fname.toLowerCase();
+                    // メタファイル: meta.lcc を優先、なければ任意の *.lcc
+                    if (fnameLower === 'meta.lcc') {
+                        metaFile = f;
+                    } else if (fnameLower.endsWith('.lcc') && !metaFile) {
+                        metaFile = f;
+                    }
+                    // データファイル: Data.bin / data.bin どちらも対応
+                    if (fnameLower === 'data.bin') dataFile = f;
                 }
 
-                if (!metaFile) { reject(new Error('LCC フォルダに meta.lcc が見つかりません')); return; }
-                if (!dataFile) { reject(new Error('LCC フォルダに Data.bin が見つかりません')); return; }
+                if (!metaFile) { reject(new Error('LCC フォルダに *.lcc メタファイルが見つかりません')); return; }
+                if (!dataFile) { reject(new Error('LCC フォルダに data.bin が見つかりません')); return; }
 
                 if (onProgress) onProgress(5);
 
                 var r1 = new FileReader();
-                r1.onerror = function () { reject(new Error('meta.lcc の読み込みに失敗しました')); };
+                r1.onerror = function () { reject(new Error('LCC メタファイルの読み込みに失敗しました')); };
                 r1.onload = function (e) {
                     var meta;
                     try { meta = parseMeta(e.target.result); }
-                    catch (err) { reject(new Error('meta.lcc の解析に失敗: ' + err.message)); return; }
+                    catch (err) { reject(new Error('LCC メタファイルの解析に失敗: ' + err.message)); return; }
 
                     if (onProgress) onProgress(20);
 
                     var r2 = new FileReader();
-                    r2.onerror = function () { reject(new Error('Data.bin の読み込みに失敗しました')); };
+                    r2.onerror = function () { reject(new Error('data.bin の読み込みに失敗しました')); };
                     r2.onload = function (e2) {
                         if (onProgress) onProgress(60);
                         var splatBuffer;
