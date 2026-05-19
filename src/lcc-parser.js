@@ -6,9 +6,41 @@
  * 対応フォーマット:
  *   旧形式: meta.lcc (JSON) + Data.bin  — スケールは log 空間
  *   新形式 v5.0: *.lcc  (JSON, encoding:"COMPRESS") + data.bin — スケールは線形
+ *
+ * attrs.lcp から spawnPoint と sceneName を取得し、返り値に含める。
  */
 window.LCCParser = (function () {
     'use strict';
+
+    // ---- ファイル読み込みヘルパー ----
+
+    /**
+     * File をテキストとして読み込む
+     * @param {File} file
+     * @returns {Promise<string>}
+     */
+    function readFileAsText(file) {
+        return new Promise(function (resolve, reject) {
+            var r = new FileReader();
+            r.onerror = function () { reject(new Error(file.name + ' の読み込みに失敗しました')); };
+            r.onload  = function (e) { resolve(e.target.result); };
+            r.readAsText(file);
+        });
+    }
+
+    /**
+     * File を ArrayBuffer として読み込む
+     * @param {File} file
+     * @returns {Promise<ArrayBuffer>}
+     */
+    function readFileAsArrayBuffer(file) {
+        return new Promise(function (resolve, reject) {
+            var r = new FileReader();
+            r.onerror = function () { reject(new Error(file.name + ' の読み込みに失敗しました')); };
+            r.onload  = function (e) { resolve(e.target.result); };
+            r.readAsArrayBuffer(file);
+        });
+    }
 
     // ---- メタ JSON の解析 ----
     function parseMeta(text) {
@@ -62,13 +94,18 @@ window.LCCParser = (function () {
 
         /**
          * FileList（webkitdirectory で取得）から LCC パッケージを読み込み変換
+         * attrs.lcp から sceneName と spawnWorld を取得して返す
+         *
          * @param {FileList} files
          * @param {function} [onProgress]  (percent: 0–100) => void
-         * @returns {Promise<{ splatBuffer: ArrayBuffer, name: string }>}
+         * @returns {Promise<{ splatBuffer: ArrayBuffer, name: string, sceneName: string, spawnWorld: {x,y,z}|null }>}
          */
         loadFromFiles: function (files, onProgress) {
             return new Promise(function (resolve, reject) {
-                var metaFile = null, dataFile = null, folderName = '';
+                var metaFile  = null;
+                var dataFile  = null;
+                var attrsFile = null;
+                var folderName = '';
 
                 for (var i = 0; i < files.length; i++) {
                     var f          = files[i];
@@ -85,67 +122,96 @@ window.LCCParser = (function () {
                     }
                     // データファイル: Data.bin / data.bin どちらも対応
                     if (fnameLower === 'data.bin') dataFile = f;
+                    // attrs.lcp: スポーンポイント・シーン名
+                    if (fnameLower === 'attrs.lcp') attrsFile = f;
                 }
 
                 if (!metaFile) { reject(new Error('LCC フォルダに *.lcc メタファイルが見つかりません')); return; }
                 if (!dataFile) { reject(new Error('LCC フォルダに data.bin が見つかりません')); return; }
 
-                if (onProgress) onProgress(5);
+                if (onProgress) onProgress(5); // ファイル探索完了
 
-                // --- Step 1: メタ JSON 読み込み ---
-                var r1 = new FileReader();
-                r1.onerror = function () { reject(new Error('LCC メタファイルの読み込みに失敗しました')); };
-                r1.onload = function (e) {
+                // --- 並列読み込み: メタ / attrs / data ---
+                var readPromises = [
+                    readFileAsText(metaFile),
+                    attrsFile ? readFileAsText(attrsFile) : Promise.resolve(null),
+                    readFileAsArrayBuffer(dataFile)
+                ];
+
+                Promise.all(readPromises).then(function (results) {
+                    var metaText  = results[0];
+                    var attrsText = results[1];
+                    var dataBin   = results[2];
+
+                    if (onProgress) onProgress(30); // 読み込み完了
+
+                    // メタ解析
                     var meta;
-                    try { meta = parseMeta(e.target.result); }
+                    try { meta = parseMeta(metaText); }
                     catch (err) { reject(new Error('LCC メタファイルの解析に失敗: ' + err.message)); return; }
 
-                    if (onProgress) onProgress(15);
+                    // attrs.lcp 解析（オプション）
+                    var sceneName  = folderName || 'scene';
+                    var spawnWorld = null;
 
-                    // --- Step 2: data.bin 読み込み ---
-                    var r2 = new FileReader();
-                    r2.onerror = function () { reject(new Error('data.bin の読み込みに失敗しました')); };
-                    r2.onload = function (e2) {
-                        if (onProgress) onProgress(40);
-
-                        // --- Step 3: Worker で PLY 変換（メインスレッドをブロックしない）---
-                        var workerURL = _workerURL || (_workerURL = _getWorkerURL());
-                        var worker;
+                    if (attrsText) {
                         try {
-                            worker = new Worker(workerURL);
-                        } catch (we) {
-                            reject(new Error('Web Worker の起動に失敗しました: ' + we.message));
+                            var attrs = JSON.parse(attrsText);
+                            if (attrs.name) sceneName = attrs.name;
+                            if (attrs.spawnPoint && Array.isArray(attrs.spawnPoint.position)) {
+                                // LCC→World 座標変換: PLY(x,y,z) → World(x, z, -y)
+                                // entity が -90° X 回転するため
+                                var spawnPos = attrs.spawnPoint.position;
+                                spawnWorld = {
+                                    x: spawnPos[0],
+                                    y: spawnPos[2],
+                                    z: -spawnPos[1]
+                                };
+                            }
+                        } catch (e) {
+                            console.warn('[LCCParser] attrs.lcp の解析に失敗（スキップ）:', e.message);
+                        }
+                    }
+
+                    // --- Worker で PLY 変換（メインスレッドをブロックしない）---
+                    var workerURL = _workerURL || (_workerURL = _getWorkerURL());
+                    var worker;
+                    try {
+                        worker = new Worker(workerURL);
+                    } catch (we) {
+                        reject(new Error('Web Worker の起動に失敗しました: ' + we.message));
+                        return;
+                    }
+
+                    if (onProgress) onProgress(50); // Worker 送信済み
+
+                    worker.onmessage = function (ev) {
+                        worker.terminate();
+                        var msg = ev.data;
+                        if (!msg.ok) {
+                            reject(new Error('PLY 変換に失敗: ' + msg.error));
                             return;
                         }
-
-                        worker.onmessage = function (ev) {
-                            worker.terminate();
-                            var msg = ev.data;
-                            if (!msg.ok) {
-                                reject(new Error('PLY 変換に失敗: ' + msg.error));
-                                return;
-                            }
-                            if (onProgress) onProgress(100);
-                            resolve({
-                                splatBuffer: msg.plyBuffer,
-                                name: (folderName || 'scene') + '.ply'
-                            });
-                        };
-
-                        worker.onerror = function (ev) {
-                            worker.terminate();
-                            reject(new Error('Worker エラー: ' + (ev.message || '不明なエラー')));
-                        };
-
-                        // dataBin を Transferable で渡す（ゼロコピー）
-                        var dataBin = e2.target.result;
-                        worker.postMessage({ dataBin: dataBin, meta: meta }, [dataBin]);
-
-                        if (onProgress) onProgress(50);
+                        if (onProgress) onProgress(100); // 変換完了
+                        resolve({
+                            splatBuffer: msg.plyBuffer,
+                            name:        sceneName + '.ply',
+                            sceneName:   sceneName,
+                            spawnWorld:  spawnWorld
+                        });
                     };
-                    r2.readAsArrayBuffer(dataFile);
-                };
-                r1.readAsText(metaFile);
+
+                    worker.onerror = function (ev) {
+                        worker.terminate();
+                        reject(new Error('Worker エラー: ' + (ev.message || '不明なエラー')));
+                    };
+
+                    // dataBin を Transferable で渡す（ゼロコピー）
+                    worker.postMessage({ dataBin: dataBin, meta: meta }, [dataBin]);
+
+                }).catch(function (err) {
+                    reject(err);
+                });
             });
         }
     };

@@ -278,7 +278,15 @@
                         });
                     }
 
-                    asset.ready(function (loadedAsset) { cleanup(); resolve(loadedAsset); });
+                    asset.ready(function (loadedAsset) {
+                        cleanup();
+                        resolve({
+                            asset:      loadedAsset,
+                            plyBuffer:  result.splatBuffer,
+                            sceneName:  result.sceneName,
+                            spawnWorld: result.spawnWorld
+                        });
+                    });
                     asset.on('error', function (err) {
                         cleanup();
                         reject(new Error('LCC アセットの読み込みに失敗しました: ' + (err || '')));

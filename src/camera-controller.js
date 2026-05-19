@@ -307,6 +307,12 @@ window.CameraController = (function () {
       if (_keys['Space'])                         { _targetPos.add(new pc.Vec3(0, spd, 0)); }
       if (_keys['ControlLeft'] || _keys['ControlRight']) { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
 
+      // 床コライダーを適用（LCC 読み込み時に構築される）
+      if (window.Collider && Collider.isReady() && Collider.isEnabled()) {
+        var resolved = Collider.resolvePosition(_targetPos, 1.6);
+        _targetPos.y = resolved.y;
+      }
+
       // Exponential lerp（フレームレート非依存）
       var tPos = 1 - Math.exp(-SMOOTH_POS * dt);
       var tRot = 1 - Math.exp(-SMOOTH_ROT * dt);

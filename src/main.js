@@ -33,9 +33,9 @@
         },
         onLCCLoaded: function (files) {
             if (!app) return;
-            loadAndRender(GSplatLoader.loadFromLCCFiles(app, files, function (pct) {
+            _loadAndRenderLCC(GSplatLoader.loadFromLCCFiles(app, files, function (pct) {
                 UI.showLoading('LCC 変換中... ' + pct + '%');
-            }), false);
+            }));
         },
         onVRRequested: function () {
             if (!app) return;
@@ -150,9 +150,9 @@
             },
             onLCCLoaded: function (files) {
                 if (!app) return;
-                loadAndRender(GSplatLoader.loadFromLCCFiles(app, files, function (pct) {
+                _loadAndRenderLCC(GSplatLoader.loadFromLCCFiles(app, files, function (pct) {
                     UI.showLoading('LCC 変換中... ' + pct + '%');
-                }), false);
+                }));
             },
         });
     }
@@ -174,6 +174,54 @@
             UI.hideLoading();
             UI.hideEmptyState();
             if (showShare) UI.showShareButton();
+        }).catch(function (err) {
+            UI.hideLoading();
+            UI.showError(err.message || String(err));
+            console.error(err);
+        });
+    }
+
+    // ---- LCC 専用ロード → レンダリング ----
+    function _loadAndRenderLCC(promise) {
+        if (!app) { UI.showError('PlayCanvas が初期化されていません'); return; }
+        UI.showLoading('読み込み中...');
+        promise.then(function (result) {
+            GSplatRenderer.disposeAll();
+            GSplatRenderer.create(app, result.asset);
+
+            // シーン名をタイトルに反映
+            if (result.sceneName) {
+                document.title = result.sceneName + ' | 3D内見ビューア';
+                UI.setTitle(result.sceneName);
+            }
+
+            // スポーンポイントにテレポート
+            if (result.spawnWorld) {
+                var sp = result.spawnWorld;
+                CameraController.teleport(sp.x, sp.y, sp.z, 0, 0);
+            }
+
+            UI.hideEmptyState();
+
+            // コライダーを PLY データから非同期構築
+            if (result.plyBuffer && window.Collider) {
+                Collider.reset();
+                UI.showLoading('コライダー構築中...');
+                Collider.buildAsync(
+                    result.plyBuffer,
+                    result.asset.name,
+                    function (pct, msg) { UI.showLoading('コライダー: ' + (msg || pct + '%')); },
+                    function (err) {
+                        if (err) console.warn('[LCC] コライダー構築失敗:', err);
+                        else console.log('[LCC] コライダー構築完了');
+                        UI.hideLoading();
+                    }
+                );
+            } else {
+                UI.hideLoading();
+            }
+
+            _updateAdminCurrentJSON(result.asset.name, null);
         }).catch(function (err) {
             UI.hideLoading();
             UI.showError(err.message || String(err));
