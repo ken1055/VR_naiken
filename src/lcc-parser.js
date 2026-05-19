@@ -64,7 +64,24 @@ window.LCCParser = (function () {
             totalSplats: meta.totalSplats || 0,
             scaleMin:    scaleMin,
             scaleMax:    scaleMax,
-            useLogScale: !isNewFormat
+            useLogScale: !isNewFormat,
+            boundingBox: meta.boundingBox || null
+        };
+    }
+
+    // ---- バウンディングボックスから World カメラ位置を計算 ----
+    // PLY 座標系 → World 座標系: World(x, y, z) = PLY(x, z, -y)  (entity が -90° X 回転)
+    // PLY z 軸が高さ方向 → World y が高さ
+    // カメラを PLY z_min + 1.6m の高さ（目線位置）、XZ 中央に配置
+    function _bboxToSpawnWorld(bbox) {
+        if (!bbox || !Array.isArray(bbox.min) || !Array.isArray(bbox.max)) return null;
+        var pxCenter = (bbox.min[0] + bbox.max[0]) / 2;  // PLY x 中央 → World x
+        var pyCenter = (bbox.min[1] + bbox.max[1]) / 2;  // PLY y 中央 → World z = -PLY y
+        var pzFloor  = bbox.min[2];                        // PLY z 最低 = 床レベル → World y
+        return {
+            x: pxCenter,
+            y: pzFloor + 1.6,   // 床から目線高さ 1.6m
+            z: -pyCenter
         };
     }
 
@@ -158,20 +175,13 @@ window.LCCParser = (function () {
                         try {
                             var attrs = JSON.parse(attrsText);
                             if (attrs.name) sceneName = attrs.name;
-                            if (attrs.spawnPoint && Array.isArray(attrs.spawnPoint.position)) {
-                                // LCC→World 座標変換: PLY(x,y,z) → World(x, z, -y)
-                                // entity が -90° X 回転するため
-                                var spawnPos = attrs.spawnPoint.position;
-                                spawnWorld = {
-                                    x: spawnPos[0],
-                                    y: spawnPos[2],
-                                    z: -spawnPos[1]
-                                };
-                            }
                         } catch (e) {
                             console.warn('[LCCParser] attrs.lcp の解析に失敗（スキップ）:', e.message);
                         }
                     }
+
+                    // バウンディングボックスからカメラ位置を計算（attrs.lcp の座標系が不定なため）
+                    spawnWorld = _bboxToSpawnWorld(meta.boundingBox);
 
                     // --- Worker で PLY 変換（メインスレッドをブロックしない）---
                     var workerURL = _workerURL || (_workerURL = _getWorkerURL());
