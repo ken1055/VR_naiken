@@ -192,6 +192,7 @@ window.Collider = (function () {
                 }
 
                 // --- Phase 4: 床高さマップ（分割）---
+                // 室内スキャンでは最低点が床なので下から上に走査して最初のボクセルを使う
                 var hmapVZ = 0;
 
                 function hmapStep() {
@@ -199,11 +200,11 @@ window.Collider = (function () {
                     var b = _bounds;
                     for (var vz = hmapVZ; vz < end; vz++) {
                         for (var vx = 0; vx < GRID; vx++) {
-                            var topVY = -1;
+                            var botVY = -1;
                             for (var vy = 0; vy < GRID; vy++) {
-                                if (_voxels[vi(vx, vy, vz)]) topVY = vy;
+                                if (_voxels[vi(vx, vy, vz)]) { botVY = vy; break; }
                             }
-                            _hmap[vx + vz * GRID] = topVY >= 0 ? b.minY + (topVY / (GRID - 1)) * b.sy : b.minY;
+                            _hmap[vx + vz * GRID] = botVY >= 0 ? b.minY + (botVY / (GRID - 1)) * b.sy : b.minY;
                         }
                     }
                     hmapVZ = end;

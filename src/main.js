@@ -217,7 +217,10 @@
                         function (pct, msg) { UI.showStatus('コライダー: ' + (msg || pct + '%')); },
                         function (err) {
                             if (err) console.warn('[LCC] コライダー構築失敗:', err);
-                            else console.log('[LCC] コライダー構築完了');
+                            else {
+                                console.log('[LCC] コライダー構築完了');
+                                UI.showColliderBtn();
+                            }
                             UI.hideStatus();
                         }
                     );

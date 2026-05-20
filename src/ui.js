@@ -291,6 +291,12 @@ window.UI = (function () {
         '  background: rgba(0,212,170,0.12);',
         '  border-color: rgba(0,212,170,0.4); color: #00D4AA; }',
 
+        /* コライダートグルボタン */
+        '#vr-collider-btn.hidden { display: none; }',
+        '#vr-collider-btn.collider-on {',
+        '  background: rgba(0,212,170,0.15);',
+        '  border-color: rgba(0,212,170,0.45); color: #00D4AA; }',
+
         /* シェアボタン */
         '#vr-share-btn.hidden { display: none; }',
         '#vr-share-btn {',
@@ -359,10 +365,11 @@ window.UI = (function () {
     var _callbacks     = {};
     var _elLCCInput    = null;
 
-    var _elShareBtn   = null;
-    var _elEmptyState = null;
-    var _elTitleEl    = null;
-    var _elStatusBar  = null;
+    var _elShareBtn    = null;
+    var _elEmptyState  = null;
+    var _elTitleEl     = null;
+    var _elStatusBar   = null;
+    var _elColliderBtn = null;
 
     // ---- ユーティリティ ----
     function el(tag, attrs, children) {
@@ -442,6 +449,19 @@ window.UI = (function () {
                 if (_elPanel) _elPanel.classList.toggle('hidden');
             });
 
+            _elColliderBtn = el('button', {
+                id: 'vr-collider-btn',
+                className: 'vr-btn hidden',
+                textContent: '床 OFF'
+            });
+            _elColliderBtn.addEventListener('click', function () {
+                if (!window.Collider || !Collider.isReady()) return;
+                var next = !Collider.isEnabled();
+                Collider.setEnabled(next);
+                _elColliderBtn.textContent = '床 ' + (next ? 'ON' : 'OFF');
+                _elColliderBtn.classList.toggle('collider-on', next);
+            });
+
             _elVRBtn = el('button', { className: 'vr-btn', textContent: 'VR', disabled: 'disabled' });
             _elVRBtn.addEventListener('click', function () {
                 if (!_elVRBtn.disabled && _callbacks.onVRRequested) _callbacks.onVRRequested();
@@ -485,7 +505,7 @@ window.UI = (function () {
             root.appendChild(el('div', { id: 'vr-header' }, [
                 logoEl,
                 _elTitleEl,
-                fileInput, openBtn, _elShareBtn, _elVRBtn, fsBtn,
+                fileInput, openBtn, _elShareBtn, _elColliderBtn, _elVRBtn, fsBtn,
             ]));
 
             // ===== ロードパネル =====
@@ -716,6 +736,14 @@ window.UI = (function () {
 
         showShareButton: function () {
             if (_elShareBtn) _elShareBtn.classList.remove('hidden');
+        },
+
+        showColliderBtn: function () {
+            if (!_elColliderBtn) return;
+            var on = window.Collider && Collider.isEnabled();
+            _elColliderBtn.textContent = '床 ' + (on ? 'ON' : 'OFF');
+            _elColliderBtn.classList.toggle('collider-on', on);
+            _elColliderBtn.classList.remove('hidden');
         },
 
         showStatus: function (msg) {
