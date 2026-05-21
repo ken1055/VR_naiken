@@ -170,8 +170,7 @@ window.CameraController = (function () {
 
   // ---- キーボードイベント ----
   var GAME_CODES = {
-    KeyW:1, KeyA:1, KeyS:1, KeyD:1, KeyF:1,
-    Space:1, ControlLeft:1, ControlRight:1,
+    KeyW:1, KeyA:1, KeyS:1, KeyD:1, KeyE:1, KeyQ:1, KeyF:1,
     ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1
   };
 
@@ -332,8 +331,8 @@ window.CameraController = (function () {
       if (_keys['KeyS'] || _keys['ArrowDown'])   { _targetPos.add(fwd.clone().scale(-spd)); }
       if (_keys['KeyD'] || _keys['ArrowRight'])  { _targetPos.add(right.clone().scale(spd)); }
       if (_keys['KeyA'] || _keys['ArrowLeft'])   { _targetPos.add(right.clone().scale(-spd)); }
-      if (_keys['Space'])                         { _targetPos.add(new pc.Vec3(0, spd, 0)); }
-      if (_keys['ControlLeft'] || _keys['ControlRight']) { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
+      if (_keys['KeyE'])  { _targetPos.add(new pc.Vec3(0,  spd, 0)); }
+      if (_keys['KeyQ'])  { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
 
       // 床コライダーを適用（LCC 読み込み時に構築される）
       if (window.Collider && Collider.isReady() && Collider.isEnabled()) {
