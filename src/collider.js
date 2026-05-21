@@ -223,6 +223,48 @@ window.Collider = (function () {
          * @param {ArrayBuffer} binBuffer  .voxel.bin の ArrayBuffer
          * @param {function}    onDone     (err) => void
          */
+        /**
+         * 管理者ツールで生成した .hmap.json を読み込む（SVO がある場合はスキップ）
+         * @param {Object}   data   .hmap.json をパースしたオブジェクト
+         * @param {function} onDone (err) => void
+         */
+        loadHmapJSON: function (data, onDone) {
+            if (_svo) { if (onDone) onDone(null); return; }  // SVO 優先
+            _ready  = false;
+            _voxels = null;
+            try {
+                if (!data || !data.bounds || !data.hmap) throw new Error('不正なフォーマット');
+                _bounds = data.bounds;
+                _hmap   = new Float32Array(data.hmap);
+                _ready  = true;
+                console.log('[Collider] hmap 読み込み完了 — grid:', data.grid);
+                if (onDone) onDone(null);
+            } catch (e) {
+                if (onDone) onDone(e);
+            }
+        },
+
+        /**
+         * 現在の床高さマップを JSON エクスポート用オブジェクトとして返す
+         * buildAsync 完了後のみ有効
+         * @returns {Object|null}
+         */
+        exportJSON: function () {
+            if (!_ready || !_bounds || !_hmap) return null;
+            var b = _bounds;
+            return {
+                format: 'vr-naiken-hmap-v1',
+                grid:   GRID,
+                bounds: {
+                    minX: b.minX, maxX: b.maxX,
+                    minY: b.minY, maxY: b.maxY,
+                    minZ: b.minZ, maxZ: b.maxZ,
+                    sx:   b.sx,   sy:   b.sy,   sz:   b.sz
+                },
+                hmap: Array.from(_hmap)
+            };
+        },
+
         loadVoxelBuffer: function (meta, binBuffer, onDone) {
             _ready = false;
             _svo   = null;

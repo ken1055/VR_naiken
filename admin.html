@@ -191,6 +191,7 @@
         // ================================================================
         function _loadApp() {
             var scripts = [
+                'src/collider.js',
                 'src/lcc-parser.js',
                 'src/gsplat-loader.js',
                 'src/gsplat-renderer.js',
@@ -304,9 +305,240 @@
                 }
             });
 
+            // ---- コリジョン生成パネル ----
+            var colliderPanel = document.createElement('div');
+            colliderPanel.id = 'admin-collider-panel';
+            colliderPanel.style.cssText = [
+                'display:none; position:fixed; top:56px; right:16px; z-index:500;',
+                'width:min(340px,94vw);',
+                'background:rgba(10,8,24,0.98);',
+                'border:1px solid rgba(245,158,11,0.25);',
+                'border-radius:18px; padding:22px 20px;',
+                'font-family:system-ui,-apple-system,sans-serif; color:#f8fafc;',
+                'box-shadow:0 24px 72px rgba(0,0,0,0.8);',
+                'backdrop-filter:blur(24px);',
+            ].join('');
+
+            var A = {  // amber スタイル定数
+                btn: [
+                    'display:block; width:100%; padding:11px 16px; border-radius:10px;',
+                    'background:rgba(245,158,11,0.12); border:1.5px solid rgba(245,158,11,0.35);',
+                    'color:rgba(253,230,138,0.9); font-size:13px; font-weight:600;',
+                    'cursor:pointer; transition:all 0.15s; font-family:system-ui,sans-serif;',
+                    'text-align:center;',
+                ].join(''),
+                btnPrimary: [
+                    'display:block; width:100%; padding:12px; border-radius:10px;',
+                    'background:linear-gradient(135deg,#f59e0b,#d97706); border:none;',
+                    'color:#fff; font-size:13.5px; font-weight:700;',
+                    'cursor:pointer; transition:all 0.15s; font-family:system-ui,sans-serif;',
+                ].join(''),
+                btnGreen: [
+                    'display:none; width:100%; padding:11px; border-radius:10px; margin-top:10px;',
+                    'background:linear-gradient(135deg,#22c55e,#16a34a); border:none;',
+                    'color:#fff; font-size:13px; font-weight:700;',
+                    'cursor:pointer; transition:all 0.15s; font-family:system-ui,sans-serif;',
+                ].join(''),
+                label: 'font-size:11px; color:rgba(248,250,252,0.35); margin-bottom:6px; display:block;',
+                hint:  'font-size:11px; color:rgba(248,250,252,0.28); line-height:1.65; margin-top:4px;',
+            };
+
+            // パネルヘッダー
+            var panelHeader = document.createElement('div');
+            panelHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;';
+            var panelTitle = document.createElement('div');
+            panelTitle.textContent = 'コリジョン生成';
+            panelTitle.style.cssText = 'font-size:15px; font-weight:700; letter-spacing:-0.3px;';
+            var panelClose = document.createElement('button');
+            panelClose.textContent = '×';
+            panelClose.style.cssText = [
+                'width:26px; height:26px; border-radius:50%;',
+                'background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);',
+                'color:rgba(248,250,252,0.5); font-size:15px; cursor:pointer;',
+                'display:flex; align-items:center; justify-content:center;',
+            ].join('');
+            panelClose.addEventListener('click', function () { colliderPanel.style.display = 'none'; });
+            panelHeader.appendChild(panelTitle);
+            panelHeader.appendChild(panelClose);
+            colliderPanel.appendChild(panelHeader);
+
+            // 説明文
+            var panelHint = document.createElement('div');
+            panelHint.style.cssText = 'font-size:12px; color:rgba(248,250,252,0.35); line-height:1.7; margin-bottom:16px;';
+            panelHint.textContent = 'PLY/Splat ファイルからコリジョンデータを生成します。生成した .hmap.json を PLY と同じ場所に配置すると自動で読み込まれます。';
+            colliderPanel.appendChild(panelHint);
+
+            // ファイル選択
+            var colliderFileInput = document.createElement('input');
+            colliderFileInput.type = 'file';
+            colliderFileInput.accept = '.ply,.splat';
+            colliderFileInput.style.display = 'none';
+            colliderPanel.appendChild(colliderFileInput);
+
+            var fileLabel = document.createElement('span');
+            fileLabel.style.cssText = A.label;
+            fileLabel.textContent = 'PLY / Splat ファイル';
+            colliderPanel.appendChild(fileLabel);
+
+            var fileRow = document.createElement('div');
+            fileRow.style.cssText = 'display:flex; gap:8px; margin-bottom:14px;';
+
+            var fileSelectBtn = document.createElement('button');
+            fileSelectBtn.textContent = '選択...';
+            fileSelectBtn.style.cssText = [
+                'padding:9px 14px; border-radius:8px;',
+                'background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);',
+                'color:rgba(248,250,252,0.7); font-size:12px; cursor:pointer;',
+                'white-space:nowrap; font-family:system-ui,sans-serif;',
+            ].join('');
+            fileSelectBtn.addEventListener('click', function () { colliderFileInput.click(); });
+
+            var fileNameEl = document.createElement('div');
+            fileNameEl.textContent = '未選択';
+            fileNameEl.style.cssText = [
+                'flex:1; padding:9px 12px; border-radius:8px; font-size:12px;',
+                'background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);',
+                'color:rgba(248,250,252,0.35); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;',
+            ].join('');
+
+            fileRow.appendChild(fileSelectBtn);
+            fileRow.appendChild(fileNameEl);
+            colliderPanel.appendChild(fileRow);
+
+            // 進捗表示
+            var progressWrap = document.createElement('div');
+            progressWrap.style.cssText = 'display:none; margin-bottom:14px;';
+            var progressBar = document.createElement('div');
+            progressBar.style.cssText = [
+                'height:6px; border-radius:3px; background:rgba(245,158,11,0.15);',
+                'margin-bottom:8px; overflow:hidden;',
+            ].join('');
+            var progressInner = document.createElement('div');
+            progressInner.style.cssText = [
+                'height:100%; border-radius:3px; width:0%;',
+                'background:linear-gradient(90deg,#f59e0b,#d97706);',
+                'transition:width 0.2s;',
+            ].join('');
+            progressBar.appendChild(progressInner);
+            var progressMsg = document.createElement('div');
+            progressMsg.style.cssText = 'font-size:12px; color:rgba(248,250,252,0.45);';
+            progressWrap.appendChild(progressBar);
+            progressWrap.appendChild(progressMsg);
+            colliderPanel.appendChild(progressWrap);
+
+            // 生成ボタン
+            var genBtn = document.createElement('button');
+            genBtn.textContent = '生成開始';
+            genBtn.disabled = true;
+            genBtn.style.cssText = A.btnPrimary;
+            genBtn.style.opacity = '0.4';
+            colliderPanel.appendChild(genBtn);
+
+            // ダウンロードボタン
+            var downloadBtn = document.createElement('button');
+            downloadBtn.textContent = '.hmap.json をダウンロード';
+            downloadBtn.style.cssText = A.btnGreen;
+            colliderPanel.appendChild(downloadBtn);
+
+            document.body.appendChild(colliderPanel);
+
+            // ---- ファイル選択時 ----
+            var _selectedFile = null;
+            colliderFileInput.addEventListener('change', function () {
+                _selectedFile = colliderFileInput.files[0] || null;
+                fileNameEl.textContent = _selectedFile ? _selectedFile.name : '未選択';
+                fileNameEl.style.color = _selectedFile ? 'rgba(248,250,252,0.75)' : 'rgba(248,250,252,0.35)';
+                genBtn.disabled = !_selectedFile;
+                genBtn.style.opacity = _selectedFile ? '1' : '0.4';
+                downloadBtn.style.display = 'none';
+                progressWrap.style.display = 'none';
+                progressInner.style.width = '0%';
+                colliderFileInput.value = '';
+            });
+
+            // ---- 生成開始 ----
+            genBtn.addEventListener('click', function () {
+                if (!_selectedFile || !window.Collider) return;
+                genBtn.disabled = true;
+                genBtn.textContent = '処理中...';
+                downloadBtn.style.display = 'none';
+                progressWrap.style.display = 'block';
+                progressInner.style.width = '0%';
+                progressMsg.textContent = '読み込み中...';
+
+                var reader = new FileReader();
+                reader.readAsArrayBuffer(_selectedFile);
+                reader.onload = function () {
+                    Collider.reset();
+                    Collider.buildAsync(
+                        reader.result,
+                        _selectedFile.name,
+                        function onProgress(pct, msg) {
+                            progressInner.style.width = pct + '%';
+                            progressMsg.textContent   = msg || (pct + '%');
+                        },
+                        function onDone(err) {
+                            genBtn.disabled = false;
+                            genBtn.textContent = '生成開始';
+                            if (err) {
+                                progressMsg.textContent = 'エラー: ' + (err.message || err);
+                                return;
+                            }
+                            progressMsg.textContent = '完了 — ダウンロードしてください';
+                            var data   = Collider.exportJSON();
+                            var json   = JSON.stringify(data);
+                            var blob   = new Blob([json], { type: 'application/json' });
+                            var objUrl = URL.createObjectURL(blob);
+                            var suggested = _selectedFile.name.replace(/\.(ply|splat)$/i, '.hmap.json');
+
+                            downloadBtn.style.display = 'block';
+                            downloadBtn.onclick = function () {
+                                if (window.showSaveFilePicker) {
+                                    window.showSaveFilePicker({
+                                        suggestedName: suggested,
+                                        types: [{ description: 'Hmap JSON', accept: { 'application/json': ['.json'] } }]
+                                    }).then(function (handle) {
+                                        return handle.createWritable().then(function (w) {
+                                            return w.write(json).then(function () { return w.close(); });
+                                        });
+                                    }).catch(function (e) {
+                                        if (e.name !== 'AbortError') _fallbackDownload(objUrl, suggested);
+                                    });
+                                } else {
+                                    _fallbackDownload(objUrl, suggested);
+                                }
+                            };
+                        }
+                    );
+                };
+            });
+
+            function _fallbackDownload(url, name) {
+                var a = document.createElement('a');
+                a.href = url; a.download = name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+
+            // ---- 管理者ボタン ----
+            var colliderGenBtn = document.createElement('button');
+            colliderGenBtn.className = 'vr-btn';
+            colliderGenBtn.textContent = 'コリジョン生成';
+            colliderGenBtn.style.cssText = [
+                'background:rgba(245,158,11,0.12);',
+                'border-color:rgba(245,158,11,0.35);',
+                'color:rgba(253,230,138,0.9);',
+            ].join('');
+            colliderGenBtn.addEventListener('click', function () {
+                var isOpen = colliderPanel.style.display !== 'none';
+                colliderPanel.style.display = isOpen ? 'none' : 'block';
+            });
+
             // 全画面ボタンの直前に挿入
             var fsBtn = document.getElementById('vr-fullscreen-btn');
             if (fsBtn) {
+                header.insertBefore(colliderGenBtn, fsBtn);
                 header.insertBefore(saveBtn, fsBtn);
                 header.insertBefore(copyBtn, fsBtn);
                 header.insertBefore(badge,   fsBtn);
@@ -314,6 +546,7 @@
                 header.appendChild(badge);
                 header.appendChild(copyBtn);
                 header.appendChild(saveBtn);
+                header.appendChild(colliderGenBtn);
             }
         }
     </script>

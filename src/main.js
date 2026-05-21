@@ -171,7 +171,8 @@
             GSplatRenderer.create(app, asset);
             if (sourceURL) {
                 _applyCompanionJSON(sourceURL);
-                _tryLoadCompanionVoxel(sourceURL);  // splat-transform SVO を自動検出
+                _tryLoadCompanionVoxel(sourceURL);  // splat-transform SVO を優先
+                _tryLoadCompanionHmap(sourceURL);   // 管理者生成 hmap をフォールバック
             }
             _updateAdminCurrentJSON(asset.name, sourceURL);
             UI.hideLoading();
@@ -242,6 +243,30 @@
     function _updateAdminCurrentJSON(assetName, sourceURL) {
         var base = (sourceURL ? sourceURL.split('?')[0].split('/').pop() : assetName) || 'scene';
         window._adminCurrentJSONName = base.replace(/\.(ply|splat|lcc)$/i, '.json');
+    }
+
+    // ---- 管理者ツール生成の .hmap.json を自動検出 ----
+    function _tryLoadCompanionHmap(url) {
+        if (!url || !window.Collider) return;
+        var base    = url.split('?')[0].replace(/\.(ply|splat)$/i, '');
+        var hmapUrl = base + '.hmap.json';
+
+        fetch(hmapUrl, { method: 'HEAD' })
+            .then(function (r) {
+                if (!r.ok) return;
+                fetch(hmapUrl)
+                    .then(function (r2) { return r2.json(); })
+                    .then(function (data) {
+                        Collider.loadHmapJSON(data, function (err) {
+                            if (!err) {
+                                UI.showColliderBtn();
+                                console.log('[Hmap] コンパニオン適用済み:', hmapUrl);
+                            }
+                        });
+                    })
+                    .catch(function () {});
+            })
+            .catch(function () {});
     }
 
     // ---- splat-transform コンパニオン Voxel ファイルを自動検出 ----
