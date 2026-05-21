@@ -190,6 +190,53 @@ window.Collider = (function () {
         return { pts: out, n: n };
     }
 
+    // ---- PLY ヘッダーのみ解析（頂点データは読まない）----
+    function parsePLYHeader(buffer) {
+        var bytes = new Uint8Array(buffer);
+        var END = 'end_header';
+        var dataStart = -1;
+
+        for (var i = 0; i < bytes.length - 12; i++) {
+            var ok = true;
+            for (var j = 0; j < END.length; j++) {
+                if (bytes[i + j] !== END.charCodeAt(j)) { ok = false; break; }
+            }
+            if (ok) {
+                dataStart = i + END.length;
+                if (bytes[dataStart] === 13) dataStart++;
+                if (bytes[dataStart] === 10) dataStart++;
+                break;
+            }
+        }
+        if (dataStart < 0) throw new Error('PLY ヘッダーが見つかりません');
+
+        var hdr   = new TextDecoder().decode(bytes.slice(0, dataStart));
+        var lines = hdr.split('\n');
+        var nV = 0, props = [], inV = false;
+
+        lines.forEach(function (line) {
+            var l = line.trim();
+            if (l.startsWith('element vertex')) { nV = parseInt(l.split(' ')[2]); inV = true; }
+            else if (l.startsWith('element') && !l.includes('vertex')) { inV = false; }
+            else if (l.startsWith('property') && inV) {
+                var p = l.split(' ');
+                var sz = p[1] === 'double' ? 8 : p[1] === 'uchar' || p[1] === 'uint8' ? 1 : p[1] === 'short' ? 2 : 4;
+                props.push({ name: p[2], size: sz });
+            }
+        });
+
+        var stride = 0, xo = -1, yo = -1, zo = -1;
+        props.forEach(function (p) {
+            if (p.name === 'x') xo = stride;
+            if (p.name === 'y') yo = stride;
+            if (p.name === 'z') zo = stride;
+            stride += p.size;
+        });
+        if (xo < 0 || yo < 0 || zo < 0) throw new Error('PLY に x/y/z プロパティが見つかりません');
+
+        return { n: nV, stride: stride, xo: xo, yo: yo, zo: zo, dataStart: dataStart };
+    }
+
     // ---- 公開 API ----
     return {
         isReady:   function () { return _ready; },
@@ -282,8 +329,9 @@ window.Collider = (function () {
         },
 
         /**
-         * バッファから非同期でコライダーを構築（分割処理でブラウザをブロックしない）
-         * Phase1: PLY パース  Phase2: BBOX 計算  Phase3: ボクセル埋め  Phase4: 床高さマップ
+         * バッファから非同期でコライダーを構築（全フェーズを分割処理）
+         * Phase0: ヘッダー解析  Phase1: 頂点データ読み込み
+         * Phase2: BBOX 計算    Phase3: ボクセル埋め  Phase4: 床高さマップ
          * @param {ArrayBuffer} buffer
          * @param {string} filename  (.ply または .splat)
          * @param {function} onProgress  (percent:number, msg:string) => void
@@ -295,22 +343,59 @@ window.Collider = (function () {
             _hmap   = null;
             _bounds = null;
 
-            var BBOX_BATCH  = 8000;  // 1tick あたりのスプラット数
-            var VOXEL_BATCH = 8000;
-            var HMAP_ROWS   = 8;     // 1tick あたりの Z 行数 (8×96×96 = 73,728 回)
+            // 1 tick あたりに処理する頂点数（メインスレッドを ~4ms 以内に抑える目安）
+            var PARSE_BATCH = 3000;
+            var BBOX_BATCH  = 3000;
+            var VOXEL_BATCH = 3000;
+            var HMAP_ROWS   = 3;
 
-            // --- Phase 1: パース ---
+            // --- Phase 0: ヘッダー解析（同期・高速）---
             setTimeout(function () {
-                var pts, n;
+                var n, stride, xo, yo, zo, dataStart, isSplat;
                 try {
-                    if (onProgress) onProgress(5, 'ファイルをパース中...');
+                    if (onProgress) onProgress(1, 'ヘッダーを解析中...');
                     var ext = (filename || '').split('.').pop().toLowerCase();
-                    var parsed = ext === 'splat' ? parseSplat(buffer) : parsePLY(buffer);
-                    pts = parsed.pts;
-                    n   = parsed.n;
+                    if (ext === 'splat') {
+                        isSplat   = true;
+                        n         = Math.floor(buffer.byteLength / 32);
+                        stride    = 32; xo = 0; yo = 4; zo = 8; dataStart = 0;
+                    } else {
+                        isSplat = false;
+                        var h   = parsePLYHeader(buffer);
+                        n = h.n; stride = h.stride;
+                        xo = h.xo; yo = h.yo; zo = h.zo;
+                        dataStart = h.dataStart;
+                    }
                 } catch (e) {
                     if (onDone) onDone(e);
                     return;
+                }
+
+                // --- Phase 1: 頂点データを分割読み込み ---
+                var pts      = new Float32Array(n * 3);
+                var dv       = new DataView(buffer, dataStart);
+                var parseIdx = 0;
+
+                function parseStep() {
+                    var end = Math.min(parseIdx + PARSE_BATCH, n);
+                    for (var i = parseIdx; i < end; i++) {
+                        var b = i * stride;
+                        pts[i * 3]     = dv.getFloat32(b + xo, true);
+                        pts[i * 3 + 1] = dv.getFloat32(b + yo, true);
+                        pts[i * 3 + 2] = dv.getFloat32(b + zo, true);
+                    }
+                    parseIdx = end;
+                    if (parseIdx < n) {
+                        if (onProgress) onProgress(
+                            2 + Math.round(parseIdx / n * 23),
+                            'ファイルをパース中... ' + Math.round(parseIdx / n * 100) + '%'
+                        );
+                        setTimeout(parseStep, 0);
+                        return;
+                    }
+                    // Phase 1 完了 → Phase 2
+                    if (onProgress) onProgress(25, 'バウンディングボックス計算中...');
+                    setTimeout(bboxStep, 0);
                 }
 
                 // --- Phase 2: バウンディングボックス（分割）---
@@ -329,7 +414,10 @@ window.Collider = (function () {
                     }
                     bboxIdx = end;
                     if (bboxIdx < n) {
-                        if (onProgress) onProgress(10 + Math.round(bboxIdx / n * 20), 'バウンディングボックス計算中...');
+                        if (onProgress) onProgress(
+                            25 + Math.round(bboxIdx / n * 15),
+                            'バウンディングボックス計算中...'
+                        );
                         setTimeout(bboxStep, 0);
                         return;
                     }
@@ -344,7 +432,7 @@ window.Collider = (function () {
                                 minZ:minZ, maxZ:maxZ, sx:sx, sy:sy, sz:sz };
                     _voxels = new Uint8Array(GRID * GRID * GRID);
 
-                    if (onProgress) onProgress(30, 'ボクセル占有フラグを構築中...');
+                    if (onProgress) onProgress(40, 'ボクセル占有フラグを構築中...');
                     setTimeout(voxelStep, 0);
                 }
 
@@ -360,19 +448,21 @@ window.Collider = (function () {
                     }
                     voxelIdx = end;
                     if (voxelIdx < n) {
-                        if (onProgress) onProgress(30 + Math.round(voxelIdx / n * 30), 'ボクセル占有フラグを構築中...');
+                        if (onProgress) onProgress(
+                            40 + Math.round(voxelIdx / n * 30),
+                            'ボクセル占有フラグを構築中...'
+                        );
                         setTimeout(voxelStep, 0);
                         return;
                     }
 
-                    // ボクセル完了 → 高さマップへ
+                    // Phase 3 完了 → Phase 4
                     _hmap = new Float32Array(GRID2).fill(_bounds.minY);
-                    if (onProgress) onProgress(60, '床高さマップを構築中...');
+                    if (onProgress) onProgress(70, '床高さマップを構築中...');
                     setTimeout(hmapStep, 0);
                 }
 
                 // --- Phase 4: 床高さマップ（分割）---
-                // 室内スキャンでは最低点が床なので下から上に走査して最初のボクセルを使う
                 var hmapVZ = 0;
 
                 function hmapStep() {
@@ -384,12 +474,17 @@ window.Collider = (function () {
                             for (var vy = 0; vy < GRID; vy++) {
                                 if (_voxels[vi(vx, vy, vz)]) { botVY = vy; break; }
                             }
-                            _hmap[vx + vz * GRID] = botVY >= 0 ? b.minY + (botVY / (GRID - 1)) * b.sy : b.minY;
+                            _hmap[vx + vz * GRID] = botVY >= 0
+                                ? b.minY + (botVY / (GRID - 1)) * b.sy
+                                : b.minY;
                         }
                     }
                     hmapVZ = end;
                     if (hmapVZ < GRID) {
-                        if (onProgress) onProgress(60 + Math.round(hmapVZ / GRID * 40), '床高さマップを構築中...');
+                        if (onProgress) onProgress(
+                            70 + Math.round(hmapVZ / GRID * 30),
+                            '床高さマップを構築中...'
+                        );
                         setTimeout(hmapStep, 0);
                         return;
                     }
@@ -400,8 +495,8 @@ window.Collider = (function () {
                     if (onDone) onDone(null);
                 }
 
-                if (onProgress) onProgress(10, 'バウンディングボックス計算中...');
-                setTimeout(bboxStep, 0);
+                if (onProgress) onProgress(2, 'ファイルをパース中...');
+                setTimeout(parseStep, 0);
             }, 0);
         },
 
