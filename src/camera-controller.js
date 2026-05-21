@@ -169,8 +169,23 @@ window.CameraController = (function () {
   function onContextMenu(e) { e.preventDefault(); }
 
   // ---- キーボードイベント ----
+  var GAME_CODES = {
+    KeyW:1, KeyA:1, KeyS:1, KeyD:1, KeyF:1,
+    Space:1, ControlLeft:1, ControlRight:1,
+    ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1
+  };
+
+  function isInputFocused() {
+    var t = document.activeElement && document.activeElement.tagName;
+    return t === 'INPUT' || t === 'TEXTAREA';
+  }
+
   function onKeyDown(e) {
+    // テキスト入力中はカメラ操作を無視
+    if (isInputFocused()) return;
+
     _keys[e.code] = true;
+
     // F キー: 原点リセット（即時テレポート）
     if (e.code === 'KeyF') {
       _targetPos.set(0, 2, 5);  _pos.set(0, 2, 5);
@@ -178,6 +193,10 @@ window.CameraController = (function () {
       _targetPitch = 0;         _pitch = 0;
       _orbitTarget.set(0, 0, 0);
     }
+
+    // ゲームキーのブラウザデフォルト動作を抑制
+    // （Ctrl+S による「保存」ダイアログ、Space/矢印によるページスクロール等を防ぐ）
+    if (GAME_CODES[e.code]) e.preventDefault();
   }
 
   function onKeyUp(e) {
