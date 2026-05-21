@@ -169,7 +169,10 @@
         promise.then(function (asset) {
             GSplatRenderer.disposeAll();
             GSplatRenderer.create(app, asset);
-            if (sourceURL) _applyCompanionJSON(sourceURL);
+            if (sourceURL) {
+                _applyCompanionJSON(sourceURL);
+                _tryLoadCompanionVoxel(sourceURL);  // splat-transform SVO を自動検出
+            }
             _updateAdminCurrentJSON(asset.name, sourceURL);
             UI.hideLoading();
             UI.hideEmptyState();
@@ -239,6 +242,34 @@
     function _updateAdminCurrentJSON(assetName, sourceURL) {
         var base = (sourceURL ? sourceURL.split('?')[0].split('/').pop() : assetName) || 'scene';
         window._adminCurrentJSONName = base.replace(/\.(ply|splat|lcc)$/i, '.json');
+    }
+
+    // ---- splat-transform コンパニオン Voxel ファイルを自動検出 ----
+    // scene.ply と同じ場所にある scene.voxel.json + scene.voxel.bin を取得する
+    // ファイルが存在しない場合は何もしない（エラーは無視）
+    function _tryLoadCompanionVoxel(url) {
+        if (!url || !window.Collider) return;
+        var base    = url.split('?')[0].replace(/\.(ply|splat)$/i, '');
+        var jsonUrl = base + '.voxel.json';
+        var binUrl  = base + '.voxel.bin';
+
+        // HEAD リクエストで存在確認してから本読み込み
+        fetch(jsonUrl, { method: 'HEAD' })
+            .then(function (r) {
+                if (!r.ok) return;
+                UI.showStatus('Voxelコリジョン読み込み中...');
+                Collider.loadVoxelFiles(jsonUrl, binUrl, function (err) {
+                    UI.hideStatus();
+                    if (err) {
+                        console.warn('[Voxel] コンパニオン読み込み失敗:', err);
+                    } else {
+                        UI.showColliderBtn();
+                        UI.showInfo('splat-transform Voxelコリジョン読み込み完了');
+                        console.log('[Voxel] SVO コンパニオン適用済み:', jsonUrl);
+                    }
+                });
+            })
+            .catch(function () { /* コンパニオン未存在は正常 */ });
     }
 
     // ---- コンパニオン JSON から初期カメラを適用 ----

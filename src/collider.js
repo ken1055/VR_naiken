@@ -1,19 +1,114 @@
 /**
  * collider.js — 3DGS 自動コライダー生成
- * .ply / .splat ファイルのスプラット座標からボクセルグリッドと床高さマップを生成し、
- * カメラの床衝突（重力）を提供する。
+ * splat-transform (.voxel.json + .voxel.bin) 優先、フォールバックとして
+ * .ply / .splat ファイルからボクセルグリッドと床高さマップを生成する。
  */
 window.Collider = (function () {
     'use strict';
 
-    var GRID = 96;       // ボクセルグリッド 1辺の解像度 (96^3 ≈ 88万ボクセル)
+    var GRID = 96;       // レガシー: ボクセルグリッド 1辺の解像度
     var GRID2 = GRID * GRID;
 
     var _ready   = false;
     var _enabled = true;
-    var _voxels  = null;     // Uint8Array[GRID^3] — 占有フラグ
-    var _hmap    = null;     // Float32Array[GRID^2] — XZ列ごとの最高床Y
-    var _bounds  = null;     // { minX,maxX,minY,maxY,minZ,maxZ,sx,sy,sz }
+    var _voxels  = null;     // レガシー Uint8Array[GRID^3]
+    var _hmap    = null;     // レガシー Float32Array[GRID^2]
+    var _bounds  = null;     // レガシー { minX,maxX,minY,maxY,minZ,maxZ,sx,sy,sz }
+
+    // ---- splat-transform SVO (Sparse Voxel Octree) ----
+    var _svo = null;   // { nodes: Uint32Array, leafData: Uint32Array, meta: Object }
+
+    // 8ビットのポップカウント（childMask 用）
+    function popcount8(v) {
+        v = v - ((v >> 1) & 0x55);
+        v = (v & 0x33) + ((v >> 2) & 0x33);
+        return (v + (v >> 4)) & 0x0F;
+    }
+
+    /**
+     * SVO ボクセル占有チェック — Laine-Karras エンコーディング
+     * ノード形式:
+     *   interior : ((childMask & 0xFF) << 24) | (baseOffset & 0xFFFFFF)
+     *   solid    : 0xFF000000
+     *   mixed    : leafDataIndex (29bit、hi2bit=0)
+     */
+    function isVoxelOccupied_SVO(vx, vy, vz) {
+        var d        = _svo;
+        var nodes    = d.nodes;
+        var leafData = d.leafData;
+        var meta     = d.meta;
+        var treeDepth = meta.treeDepth;
+        var leafSize  = meta.leafSize;   // 常に 4
+        var gMin = meta.gridBounds.min;
+        var gMax = meta.gridBounds.max;
+        var res  = meta.voxelResolution;
+
+        // グリッド範囲外は空
+        var gsX = Math.round((gMax[0] - gMin[0]) / res);
+        var gsY = Math.round((gMax[1] - gMin[1]) / res);
+        var gsZ = Math.round((gMax[2] - gMin[2]) / res);
+        if (vx < 0 || vy < 0 || vz < 0 || vx >= gsX || vy >= gsY || vz >= gsZ) return false;
+
+        var nodeIdx = 0;              // root = nodes[0]
+        var lx = vx, ly = vy, lz = vz; // 現在オクタント内のローカル座標
+
+        for (var level = 0; level < treeDepth; level++) {
+            var node = nodes[nodeIdx];
+
+            if (node === 0xFF000000) return true;   // solid subtree
+
+            var childMask  = (node >>> 24) & 0xFF;
+            var baseOffset = node & 0x00FFFFFF;
+
+            // 子オクタントの 1 辺ボクセル数
+            var childSize = leafSize << (treeDepth - level - 1);
+
+            var ox = lx >= childSize ? 1 : 0;
+            var oy = ly >= childSize ? 1 : 0;
+            var oz = lz >= childSize ? 1 : 0;
+            var octant = ox | (oy << 1) | (oz << 2);
+
+            if (!((childMask >> octant) & 1)) return false; // child 不在 → empty
+
+            var childOffset = popcount8(childMask & ((1 << octant) - 1));
+            nodeIdx = baseOffset + childOffset;
+
+            if (ox) lx -= childSize;
+            if (oy) ly -= childSize;
+            if (oz) lz -= childSize;
+        }
+
+        // リーフブロック (4×4×4)
+        var leafNode = nodes[nodeIdx];
+        if (leafNode === 0xFF000000) return true;   // solid leaf
+
+        // mixed leaf — 64bit マスクで個別ボクセルを確認
+        var bitIdx = (lx & 3) | ((ly & 3) << 2) | ((lz & 3) << 4);
+        if (bitIdx < 32) {
+            return !!((leafData[leafNode * 2]     >>> bitIdx)        & 1);
+        } else {
+            return !!((leafData[leafNode * 2 + 1] >>> (bitIdx - 32)) & 1);
+        }
+    }
+
+    /** SVO でワールド XZ に対応する床 Y を返す（下から上へ走査） */
+    function getFloorY_SVO(wx, wz) {
+        var meta = _svo.meta;
+        var res  = meta.voxelResolution;
+        var gMin = meta.gridBounds.min;
+        var gMax = meta.gridBounds.max;
+
+        var vx    = Math.floor((wx - gMin[0]) / res);
+        var vz    = Math.floor((wz - gMin[2]) / res);
+        var maxVY = Math.ceil((gMax[1] - gMin[1]) / res);
+
+        for (var vy = 0; vy < maxVY; vy++) {
+            if (isVoxelOccupied_SVO(vx, vy, vz)) {
+                return gMin[1] + vy * res;
+            }
+        }
+        return null;
+    }
 
     // Nerfstudio 座標補正: entity に setLocalEulerAngles(-90,0,0) が適用されているため
     // PLY 座標 (x,y,z) → ワールド座標 (x, z, -y)
@@ -100,6 +195,49 @@ window.Collider = (function () {
         isReady:   function () { return _ready; },
         isEnabled: function () { return _enabled; },
         setEnabled: function (v) { _enabled = !!v; },
+        isSVO:     function () { return !!_svo; },   // splat-transform SVO 使用中か
+
+        /**
+         * splat-transform CLI が生成した .voxel.json + .voxel.bin を URL から読み込む
+         * @param {string}   jsonUrl
+         * @param {string}   binUrl
+         * @param {function} onDone  (err) => void
+         */
+        loadVoxelFiles: function (jsonUrl, binUrl, onDone) {
+            _ready = false;
+            _svo   = null;
+            Promise.all([
+                fetch(jsonUrl).then(function (r) { return r.json(); }),
+                fetch(binUrl).then(function (r)  { return r.arrayBuffer(); })
+            ]).then(function (results) {
+                window.Collider.loadVoxelBuffer(results[0], results[1], onDone);
+            }).catch(function (err) {
+                if (onDone) onDone(err);
+            });
+        },
+
+        /**
+         * 既に読み込み済みの meta オブジェクトと ArrayBuffer から SVO を構築
+         * ローカルファイル選択時に使用
+         * @param {Object}      meta       .voxel.json をパースしたオブジェクト
+         * @param {ArrayBuffer} binBuffer  .voxel.bin の ArrayBuffer
+         * @param {function}    onDone     (err) => void
+         */
+        loadVoxelBuffer: function (meta, binBuffer, onDone) {
+            _ready = false;
+            _svo   = null;
+            try {
+                var nodes    = new Uint32Array(binBuffer, 0,                  meta.nodeCount);
+                var leafData = new Uint32Array(binBuffer, meta.nodeCount * 4, meta.leafDataCount);
+                _svo   = { nodes: nodes, leafData: leafData, meta: meta };
+                _ready = true;
+                console.log('[Collider] SVO 読み込み完了 — treeDepth:', meta.treeDepth,
+                    'resolution:', meta.voxelResolution, 'm');
+                if (onDone) onDone(null);
+            } catch (e) {
+                if (onDone) onDone(e);
+            }
+        },
 
         /**
          * バッファから非同期でコライダーを構築（分割処理でブラウザをブロックしない）
@@ -227,12 +365,15 @@ window.Collider = (function () {
 
         /**
          * ワールド XZ 位置の床 Y を返す
+         * SVO があれば SVO を使用、なければレガシー高さマップを使用
          * @param {number} wx
          * @param {number} wz
          * @returns {number|null}  null = 範囲外
          */
         getFloorY: function (wx, wz) {
-            if (!_ready || !_bounds) return null;
+            if (!_ready) return null;
+            if (_svo) return getFloorY_SVO(wx, wz);
+            if (!_bounds) return null;
             var b  = _bounds;
             var vx = toVox(wx, b.minX, b.sx);
             var vz = toVox(wz, b.minZ, b.sz);
@@ -260,6 +401,7 @@ window.Collider = (function () {
             _voxels = null;
             _hmap   = null;
             _bounds = null;
+            _svo    = null;
         },
     };
 }());

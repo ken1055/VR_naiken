@@ -342,6 +342,25 @@ window.UI = (function () {
         '  font-size: 12px; color: rgba(240,244,248,0.12);',
         '  max-width: 260px; text-align: center; line-height: 1.7; }',
 
+        /* Voxelセクション */
+        '#vr-voxel-section { margin-top: 16px; }',
+        '#vr-voxel-btn {',
+        '  width: 100%; padding: 12px 16px;',
+        '  background: rgba(120,80,220,0.08);',
+        '  border: 1.5px solid rgba(120,80,220,0.25);',
+        '  border-radius: 12px;',
+        '  color: #a78bfa; font-size: 13.5px; font-weight: 700;',
+        '  cursor: pointer; transition: all 0.15s;',
+        '  font-family: system-ui, sans-serif;',
+        '  display: flex; align-items: center; justify-content: center; gap: 8px; }',
+        '#vr-voxel-btn::before { content: "⬡"; font-size: 14px; }',
+        '#vr-voxel-btn:hover {',
+        '  background: rgba(120,80,220,0.16);',
+        '  border-color: rgba(120,80,220,0.5);',
+        '  box-shadow: 0 4px 20px rgba(120,80,220,0.2);',
+        '  transform: translateY(-1px); }',
+        '#vr-voxel-btn:active { transform: translateY(0); }',
+
         /* モバイル対応 */
         '@media (hover: none) and (pointer: coarse) {',
         '  .vr-btn { padding: 8px 16px; min-height: 44px; }',
@@ -597,6 +616,58 @@ window.UI = (function () {
                 lccBtn,
                 el('div', { id: 'vr-lcc-hint',
                     textContent: 'LCC フォルダ（*.lcc / data.bin を含む）を選択してください。旧形式（meta.lcc / Data.bin）も対応しています。'
+                }),
+            ]));
+
+            // splat-transform Voxel ファイル読み込みセクション
+            var voxelInput = el('input', { type: 'file', accept: '.json,.bin', style: 'display:none' });
+            voxelInput.setAttribute('multiple', '');
+            voxelInput.addEventListener('change', function () {
+                var files = Array.from(voxelInput.files);
+                var jsonFile = files.find(function (f) { return f.name.endsWith('.json'); });
+                var binFile  = files.find(function (f) { return f.name.endsWith('.bin');  });
+                voxelInput.value = '';
+                if (!jsonFile || !binFile) {
+                    window.UI.showError('.voxel.json と .voxel.bin の両方を選択してください');
+                    return;
+                }
+                var reader = new FileReader();
+                reader.readAsText(jsonFile);
+                reader.onload = function () {
+                    try {
+                        var meta = JSON.parse(reader.result);
+                        var binReader = new FileReader();
+                        binReader.readAsArrayBuffer(binFile);
+                        binReader.onload = function () {
+                            if (!window.Collider) { window.UI.showError('Collider が初期化されていません'); return; }
+                            Collider.loadVoxelBuffer(meta, binReader.result, function (err) {
+                                if (err) {
+                                    window.UI.showError('Voxelファイル読み込み失敗: ' + err.message);
+                                } else {
+                                    window.UI.showInfo('splat-transform Voxelコリジョン読み込み完了');
+                                    window.UI.showColliderBtn();
+                                    if (_elPanel) _elPanel.classList.add('hidden');
+                                }
+                            });
+                        };
+                    } catch (e) {
+                        window.UI.showError('JSONの解析に失敗しました');
+                    }
+                };
+            });
+
+            var voxelBtn = el('button', {
+                id: 'vr-voxel-btn',
+                textContent: 'Voxelファイルを開く (.json + .bin)'
+            });
+            voxelBtn.addEventListener('click', function () { voxelInput.click(); });
+
+            paneFile.appendChild(el('div', { id: 'vr-voxel-section' }, [
+                el('div', { className: 'vr-lcc-divider', textContent: 'splat-transform Voxel' }),
+                voxelInput,
+                voxelBtn,
+                el('div', { className: 'vr-lcc-hint',
+                    textContent: 'splat-transform CLI で生成した .voxel.json と .voxel.bin を同時選択してください。URLロード時は自動検出されます。'
                 }),
             ]));
 
