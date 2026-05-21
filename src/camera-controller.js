@@ -276,6 +276,8 @@ window.CameraController = (function () {
       // キーボードイベント（window に付与）
       window.addEventListener('keydown', onKeyDown, false);
       window.addEventListener('keyup',   onKeyUp,   false);
+      // フォーカス喪失時にキー状態をリセット（keyup が届かず stuck になるのを防ぐ）
+      window.addEventListener('blur', function () { _keys = {}; }, false);
 
       // タッチイベント
       canvas.addEventListener('touchstart', onTouchStart, { passive: false });
