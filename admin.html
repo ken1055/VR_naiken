@@ -170,6 +170,7 @@
         _loginBtn.addEventListener('click', function () {
             if (_pwInput.value === ADMIN_PASSWORD) {
                 _lockEl.style.display = 'none';
+                _pwInput.blur(); // フォーカスを外してゲームキーが効くようにする
                 _loadApp();
             } else {
                 _errorEl.textContent = 'パスワードが違います';
@@ -179,7 +180,10 @@
         });
 
         _pwInput.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') _loginBtn.click();
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Enter のブラウザデフォルトを抑制
+                _loginBtn.click();
+            }
             if (_errorEl.textContent) _errorEl.textContent = '';
         });
 

@@ -181,6 +181,11 @@ window.CameraController = (function () {
   }
 
   function onKeyDown(e) {
+    // Ctrl+W / Cmd+W はテキスト入力中でも常にタブを閉じさせない
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyW') {
+      e.preventDefault();
+    }
+
     // テキスト入力中はカメラ操作を無視
     if (isInputFocused()) return;
 
@@ -195,7 +200,6 @@ window.CameraController = (function () {
     }
 
     // ゲームキーのブラウザデフォルト動作を抑制
-    // （Ctrl+S による「保存」ダイアログ、Space/矢印によるページスクロール等を防ぐ）
     if (GAME_CODES[e.code]) e.preventDefault();
   }
 
@@ -315,6 +319,9 @@ window.CameraController = (function () {
      */
     update: function (dt) {
       if (!_cameraEntity) return;
+
+      // タブが非アクティブから復帰したときの巨大な dt を制限
+      dt = Math.min(dt, 0.1);
 
       var fwd   = getForward();
       var right = getRight();
