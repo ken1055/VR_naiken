@@ -171,16 +171,16 @@ window.UI = (function () {
         '  opacity: 0.5; }',
         '#vr-dropzone .drop-sub { font-size: 11px; margin-top: 5px; opacity: 0.5; }',
 
-        /* LCC フォルダ読み込みセクション */
-        '#vr-lcc-section { margin-top: 16px; }',
-        '#vr-lcc-divider {',
+        /* フォルダ一括読み込みセクション */
+        '#vr-folder-section { margin-top: 16px; }',
+        '#vr-folder-divider {',
         '  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;',
         '  color: rgba(0,212,170,0.35); font-size: 11px; font-weight: 600;',
         '  letter-spacing: 0.6px; text-transform: uppercase; }',
-        '#vr-lcc-divider::before, #vr-lcc-divider::after {',
+        '#vr-folder-divider::before, #vr-folder-divider::after {',
         '  content: ""; flex: 1;',
         '  border-top: 1px solid rgba(0,212,170,0.1); }',
-        '#vr-lcc-btn {',
+        '#vr-folder-btn {',
         '  width: 100%; padding: 12px 16px;',
         '  background: rgba(0,212,170,0.08);',
         '  border: 1.5px solid rgba(0,212,170,0.25);',
@@ -189,14 +189,13 @@ window.UI = (function () {
         '  cursor: pointer; transition: all 0.15s;',
         '  font-family: system-ui, sans-serif;',
         '  display: flex; align-items: center; justify-content: center; gap: 8px; }',
-        '#vr-lcc-btn::before { content: "⬡"; font-size: 14px; }',
-        '#vr-lcc-btn:hover {',
+        '#vr-folder-btn:hover {',
         '  background: rgba(0,212,170,0.16);',
         '  border-color: rgba(0,212,170,0.5);',
         '  box-shadow: 0 4px 20px rgba(0,212,170,0.2);',
         '  transform: translateY(-1px); }',
-        '#vr-lcc-btn:active { transform: translateY(0); }',
-        '#vr-lcc-hint {',
+        '#vr-folder-btn:active { transform: translateY(0); }',
+        '#vr-folder-hint {',
         '  margin-top: 8px; font-size: 11px;',
         '  color: rgba(240,244,248,0.22); line-height: 1.65;',
         '  padding: 0 2px; }',
@@ -342,25 +341,6 @@ window.UI = (function () {
         '  font-size: 12px; color: rgba(240,244,248,0.12);',
         '  max-width: 260px; text-align: center; line-height: 1.7; }',
 
-        /* Voxelセクション */
-        '#vr-voxel-section { margin-top: 16px; }',
-        '#vr-voxel-btn {',
-        '  width: 100%; padding: 12px 16px;',
-        '  background: rgba(120,80,220,0.08);',
-        '  border: 1.5px solid rgba(120,80,220,0.25);',
-        '  border-radius: 12px;',
-        '  color: #a78bfa; font-size: 13.5px; font-weight: 700;',
-        '  cursor: pointer; transition: all 0.15s;',
-        '  font-family: system-ui, sans-serif;',
-        '  display: flex; align-items: center; justify-content: center; gap: 8px; }',
-        '#vr-voxel-btn::before { content: "⬡"; font-size: 14px; }',
-        '#vr-voxel-btn:hover {',
-        '  background: rgba(120,80,220,0.16);',
-        '  border-color: rgba(120,80,220,0.5);',
-        '  box-shadow: 0 4px 20px rgba(120,80,220,0.2);',
-        '  transform: translateY(-1px); }',
-        '#vr-voxel-btn:active { transform: translateY(0); }',
-
         /* モバイル対応 */
         '@media (hover: none) and (pointer: coarse) {',
         '  .vr-btn { padding: 8px 16px; min-height: 44px; }',
@@ -368,7 +348,7 @@ window.UI = (function () {
         '  #vr-url-input { padding: 13px 14px; font-size: 16px; }',
         '  #vr-load-url-btn { padding: 14px; }',
         '  #vr-dropzone { padding: 48px 20px; }',
-        '  #vr-lcc-btn { padding: 14px 16px; } }',
+        '  #vr-folder-btn { padding: 14px 16px; } }',
     ].join('\n');
 
     // ---- 内部状態 ----
@@ -382,8 +362,6 @@ window.UI = (function () {
     var _elHelpOverlay = null;
     var _helpTimer     = null;
     var _callbacks     = {};
-    var _elLCCInput    = null;
-
     var _elShareBtn    = null;
     var _elEmptyState  = null;
     var _elTitleEl     = null;
@@ -425,12 +403,6 @@ window.UI = (function () {
             return;
         }
         if (_callbacks.onFileLoaded) _callbacks.onFileLoaded(file);
-        if (_elPanel) _elPanel.classList.add('hidden');
-    }
-
-    function triggerLCCLoad(files) {
-        if (!files || files.length === 0) return;
-        if (_callbacks.onLCCLoaded) _callbacks.onLCCLoaded(files);
         if (_elPanel) _elPanel.classList.add('hidden');
     }
 
@@ -595,79 +567,30 @@ window.UI = (function () {
             });
             paneFile.appendChild(_elDropzone);
 
-            // LCC フォルダ読み込みセクション
-            _elLCCInput = el('input', { type: 'file', style: 'display:none' });
-            _elLCCInput.setAttribute('webkitdirectory', '');
-            _elLCCInput.setAttribute('multiple', '');
-            _elLCCInput.addEventListener('change', function () {
-                if (_elLCCInput.files.length > 0) triggerLCCLoad(_elLCCInput.files);
-                _elLCCInput.value = '';
-            });
-
-            var lccBtn = el('button', {
-                id: 'vr-lcc-btn',
-                textContent: 'LCC フォルダを開く'
-            });
-            lccBtn.addEventListener('click', function () { _elLCCInput.click(); });
-
-            paneFile.appendChild(el('div', { id: 'vr-lcc-section' }, [
-                el('div', { id: 'vr-lcc-divider', textContent: 'LCC 形式' }),
-                _elLCCInput,
-                lccBtn,
-                el('div', { id: 'vr-lcc-hint',
-                    textContent: 'LCC フォルダ（*.lcc / data.bin を含む）を選択してください。旧形式（meta.lcc / Data.bin）も対応しています。'
-                }),
-            ]));
-
-            // splat-transform Voxel ファイル読み込みセクション
-            var voxelInput = el('input', { type: 'file', accept: '.json,.bin', style: 'display:none' });
-            voxelInput.setAttribute('multiple', '');
-            voxelInput.addEventListener('change', function () {
-                var files = Array.from(voxelInput.files);
-                var jsonFile = files.find(function (f) { return f.name.endsWith('.json'); });
-                var binFile  = files.find(function (f) { return f.name.endsWith('.bin');  });
-                voxelInput.value = '';
-                if (!jsonFile || !binFile) {
-                    window.UI.showError('.voxel.json と .voxel.bin の両方を選択してください');
-                    return;
+            // フォルダ一括読み込みセクション
+            var folderInput = el('input', { type: 'file', style: 'display:none' });
+            folderInput.setAttribute('webkitdirectory', '');
+            folderInput.setAttribute('multiple', '');
+            folderInput.addEventListener('change', function () {
+                if (folderInput.files.length > 0) {
+                    if (_callbacks.onFolderLoaded) _callbacks.onFolderLoaded(folderInput.files);
+                    if (_elPanel) _elPanel.classList.add('hidden');
                 }
-                var reader = new FileReader();
-                reader.readAsText(jsonFile);
-                reader.onload = function () {
-                    try {
-                        var meta = JSON.parse(reader.result);
-                        var binReader = new FileReader();
-                        binReader.readAsArrayBuffer(binFile);
-                        binReader.onload = function () {
-                            if (!window.Collider) { window.UI.showError('Collider が初期化されていません'); return; }
-                            Collider.loadVoxelBuffer(meta, binReader.result, function (err) {
-                                if (err) {
-                                    window.UI.showError('Voxelファイル読み込み失敗: ' + err.message);
-                                } else {
-                                    window.UI.showInfo('splat-transform Voxelコリジョン読み込み完了');
-                                    window.UI.showColliderBtn();
-                                    if (_elPanel) _elPanel.classList.add('hidden');
-                                }
-                            });
-                        };
-                    } catch (e) {
-                        window.UI.showError('JSONの解析に失敗しました');
-                    }
-                };
+                folderInput.value = '';
             });
 
-            var voxelBtn = el('button', {
-                id: 'vr-voxel-btn',
-                textContent: 'Voxelファイルを開く (.json + .bin)'
+            var folderBtn = el('button', {
+                id: 'vr-folder-btn',
+                textContent: 'シーンフォルダを開く'
             });
-            voxelBtn.addEventListener('click', function () { voxelInput.click(); });
+            folderBtn.addEventListener('click', function () { folderInput.click(); });
 
-            paneFile.appendChild(el('div', { id: 'vr-voxel-section' }, [
-                el('div', { className: 'vr-lcc-divider', textContent: 'splat-transform Voxel' }),
-                voxelInput,
-                voxelBtn,
-                el('div', { className: 'vr-lcc-hint',
-                    textContent: 'splat-transform CLI で生成した .voxel.json と .voxel.bin を同時選択してください。URLロード時は自動検出されます。'
+            paneFile.appendChild(el('div', { id: 'vr-folder-section' }, [
+                el('div', { id: 'vr-folder-divider', textContent: 'フォルダから一括読み込み' }),
+                folderInput,
+                folderBtn,
+                el('div', { id: 'vr-folder-hint',
+                    textContent: '.ply / .splat を含むフォルダを選択してください。カメラ位置 (.json) とコリジョン (.hmap.json または .voxel.json + .voxel.bin) が同じフォルダにあれば自動で読み込まれます。'
                 }),
             ]));
 

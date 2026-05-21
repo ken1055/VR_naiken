@@ -31,11 +31,9 @@
                 UI.showLoading('ダウンロード中... ' + pct + '%');
             }), true, url);
         },
-        onLCCLoaded: function (files) {
+        onFolderLoaded: function (files) {
             if (!app) return;
-            _loadAndRenderLCC(GSplatLoader.loadFromLCCFiles(app, files, function (pct) {
-                UI.showLoading('LCC 変換中... ' + pct + '%');
-            }));
+            loadFolderAndRender(files);
         },
         onVRRequested: function () {
             if (!app) return;
@@ -148,11 +146,9 @@
                     UI.showLoading('ダウンロード中... ' + pct + '%');
                 }), true);
             },
-            onLCCLoaded: function (files) {
+            onFolderLoaded: function (files) {
                 if (!app) return;
-                _loadAndRenderLCC(GSplatLoader.loadFromLCCFiles(app, files, function (pct) {
-                    UI.showLoading('LCC 変換中... ' + pct + '%');
-                }));
+                loadFolderAndRender(files);
             },
         });
     }
@@ -185,53 +181,85 @@
         });
     }
 
-    // ---- LCC 専用ロード → レンダリング ----
-    function _loadAndRenderLCC(promise) {
+    // ---- フォルダ一括読み込み → レンダリング ----
+    // フォルダ内の PLY/splat + コンパニオンファイルをまとめて読み込む
+    function loadFolderAndRender(files) {
         if (!app) { UI.showError('PlayCanvas が初期化されていません'); return; }
+
+        var fileArr = Array.from(files);
+
+        // PLY / splat ファイルを探す
+        var plyFile = fileArr.find(function (f) {
+            return /\.(ply|splat)$/i.test(f.name);
+        });
+        if (!plyFile) {
+            UI.showError('.ply または .splat ファイルがフォルダ内に見つかりません');
+            return;
+        }
+
+        // 同名のコンパニオンファイルを探す
+        var base      = plyFile.name.replace(/\.(ply|splat)$/i, '');
+        var jsonFile  = fileArr.find(function (f) { return f.name === base + '.json'; });
+        var hmapFile  = fileArr.find(function (f) { return f.name === base + '.hmap.json'; });
+        var voxelJson = fileArr.find(function (f) { return f.name === base + '.voxel.json'; });
+        var voxelBin  = fileArr.find(function (f) { return f.name === base + '.voxel.bin'; });
+
         UI.showLoading('読み込み中...');
-        promise.then(function (result) {
+
+        GSplatLoader.loadFromFile(app, plyFile, function (pct) {
+            UI.showLoading('読み込み中... ' + pct + '%');
+        }).then(function (asset) {
             GSplatRenderer.disposeAll();
-            GSplatRenderer.create(app, result.asset);
-
-            // シーン名をタイトルに反映
-            if (result.sceneName) {
-                document.title = result.sceneName + ' | 3D内見ビューア';
-                UI.setTitle(result.sceneName);
-            }
-
-            // スポーンポイントにテレポート
-            if (result.spawnWorld) {
-                var sp = result.spawnWorld;
-                CameraController.teleport(sp.x, sp.y, sp.z, 0, 0);
-            }
-
+            GSplatRenderer.create(app, asset);
+            _updateAdminCurrentJSON(asset.name, null);
             UI.hideLoading();
             UI.hideEmptyState();
 
-            // コライダーを PLY データから非同期構築（シーン表示後に開始）
-            if (result.plyBuffer && window.Collider) {
-                Collider.reset();
-                var _plyBuf = result.plyBuffer;
-                var _assetName = result.asset.name;
-                setTimeout(function () {
-                    UI.showStatus('コライダー構築中...');
-                    Collider.buildAsync(
-                        _plyBuf,
-                        _assetName,
-                        function (pct, msg) { UI.showStatus('コライダー: ' + (msg || pct + '%')); },
-                        function (err) {
-                            if (err) console.warn('[LCC] コライダー構築失敗:', err);
-                            else {
-                                console.log('[LCC] コライダー構築完了');
-                                UI.showColliderBtn();
-                            }
-                            UI.hideStatus();
+            // カメラ位置 JSON を適用
+            if (jsonFile) {
+                var jr = new FileReader();
+                jr.readAsText(jsonFile);
+                jr.onload = function () {
+                    try {
+                        var config = JSON.parse(jr.result);
+                        if (config && config.initialCamera) {
+                            var c = config.initialCamera;
+                            CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
                         }
-                    );
-                }, 500);
+                    } catch (e) {}
+                };
             }
 
-            _updateAdminCurrentJSON(result.asset.name, null);
+            // コリジョン適用 (SVO 優先 → hmap フォールバック)
+            if (voxelJson && voxelBin && window.Collider) {
+                Collider.reset();
+                var vr = new FileReader();
+                vr.readAsText(voxelJson);
+                vr.onload = function () {
+                    try {
+                        var meta = JSON.parse(vr.result);
+                        var br = new FileReader();
+                        br.readAsArrayBuffer(voxelBin);
+                        br.onload = function () {
+                            Collider.loadVoxelBuffer(meta, br.result, function (err) {
+                                if (!err) { UI.showColliderBtn(); UI.showInfo('Voxelコリジョン読み込み完了'); }
+                            });
+                        };
+                    } catch (e) {}
+                };
+            } else if (hmapFile && window.Collider) {
+                Collider.reset();
+                var hr = new FileReader();
+                hr.readAsText(hmapFile);
+                hr.onload = function () {
+                    try {
+                        var data = JSON.parse(hr.result);
+                        Collider.loadHmapJSON(data, function (err) {
+                            if (!err) UI.showColliderBtn();
+                        });
+                    } catch (e) {}
+                };
+            }
         }).catch(function (err) {
             UI.hideLoading();
             UI.showError(err.message || String(err));
