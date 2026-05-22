@@ -62,7 +62,7 @@ window.UI = (function () {
 
         /* 操作説明 */
         '#vr-help-overlay {',
-        '  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);',
+        '  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);',
         '  z-index: 110; white-space: nowrap;',
         '  padding: 12px 20px; border-radius: 16px;',
         '  background: rgba(0,4,12,0.94);',
