@@ -336,7 +336,7 @@ window.CameraController = (function () {
 
       // 床コライダーを適用（LCC 読み込み時に構築される）
       if (window.Collider && Collider.isReady() && Collider.isEnabled()) {
-        var resolved = Collider.resolvePosition(_targetPos, 1.6);
+        var resolved = Collider.resolvePosition(_targetPos, 1.0);
         // 壁付近で床高さマップが誤った大きな値を返す場合に急上昇するのを防ぐ
         // 上方向は最大 3m/s、下方向は即時（落下は自然に追従）
         var maxUpPerFrame = 3.0 * dt;

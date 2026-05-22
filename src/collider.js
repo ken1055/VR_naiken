@@ -16,7 +16,8 @@ window.Collider = (function () {
     var _bounds  = null;     // レガシー { minX,maxX,minY,maxY,minZ,maxZ,sx,sy,sz }
 
     // ---- splat-transform SVO (Sparse Voxel Octree) ----
-    var _svo = null;   // { nodes: Uint32Array, leafData: Uint32Array, meta: Object }
+    var _svo     = null;   // { nodes: Uint32Array, leafData: Uint32Array, meta: Object }
+    var _ceilmap = null;   // Float32Array[GRID^2] — 天井高さマップ
 
     // 8ビットのポップカウント（childMask 用）
     function popcount8(v) {
@@ -89,6 +90,25 @@ window.Collider = (function () {
         } else {
             return !!((leafData[leafNode * 2 + 1] >>> (bitIdx - 32)) & 1);
         }
+    }
+
+    /** SVO でワールド XZ に対応する天井 Y を返す（上から下へ走査） */
+    function getCeilY_SVO(wx, wz) {
+        var meta = _svo.meta;
+        var res  = meta.voxelResolution;
+        var gMin = meta.gridBounds.min;
+        var gMax = meta.gridBounds.max;
+
+        var vx    = Math.floor((wx - gMin[0]) / res);
+        var vz    = Math.floor((wz - gMin[2]) / res);
+        var maxVY = Math.ceil((gMax[1] - gMin[1]) / res);
+
+        for (var vy = maxVY - 1; vy >= 0; vy--) {
+            if (isVoxelOccupied_SVO(vx, vy, vz)) {
+                return gMin[1] + vy * res;
+            }
+        }
+        return null;
     }
 
     /** SVO でワールド XZ に対応する床 Y を返す（下から上へ走査） */
@@ -281,9 +301,10 @@ window.Collider = (function () {
             _voxels = null;
             try {
                 if (!data || !data.bounds || !data.hmap) throw new Error('不正なフォーマット');
-                _bounds = data.bounds;
-                _hmap   = new Float32Array(data.hmap);
-                _ready  = true;
+                _bounds  = data.bounds;
+                _hmap    = new Float32Array(data.hmap);
+                _ceilmap = data.ceilmap ? new Float32Array(data.ceilmap) : null;
+                _ready   = true;
                 console.log('[Collider] hmap 読み込み完了 — grid:', data.grid);
                 if (onDone) onDone(null);
             } catch (e) {
@@ -308,7 +329,8 @@ window.Collider = (function () {
                     minZ: b.minZ, maxZ: b.maxZ,
                     sx:   b.sx,   sy:   b.sy,   sz:   b.sz
                 },
-                hmap: Array.from(_hmap)
+                hmap:    Array.from(_hmap),
+                ceilmap: _ceilmap ? Array.from(_ceilmap) : null,
             };
         },
 
@@ -457,8 +479,9 @@ window.Collider = (function () {
                     }
 
                     // Phase 3 完了 → Phase 4
-                    _hmap = new Float32Array(GRID2).fill(_bounds.minY);
-                    if (onProgress) onProgress(70, '床高さマップを構築中...');
+                    _hmap    = new Float32Array(GRID2).fill(_bounds.minY);
+                    _ceilmap = new Float32Array(GRID2).fill(_bounds.maxY);
+                    if (onProgress) onProgress(70, '床・天井マップを構築中...');
                     setTimeout(hmapStep, 0);
                 }
 
@@ -470,20 +493,26 @@ window.Collider = (function () {
                     var b = _bounds;
                     for (var vz = hmapVZ; vz < end; vz++) {
                         for (var vx = 0; vx < GRID; vx++) {
-                            var botVY = -1;
+                            var botVY = -1, topVY = -1;
                             for (var vy = 0; vy < GRID; vy++) {
                                 if (_voxels[vi(vx, vy, vz)]) { botVY = vy; break; }
+                            }
+                            for (var vy2 = GRID - 1; vy2 >= 0; vy2--) {
+                                if (_voxels[vi(vx, vy2, vz)]) { topVY = vy2; break; }
                             }
                             _hmap[vx + vz * GRID] = botVY >= 0
                                 ? b.minY + (botVY / (GRID - 1)) * b.sy
                                 : b.minY;
+                            _ceilmap[vx + vz * GRID] = topVY >= 0
+                                ? b.minY + (topVY / (GRID - 1)) * b.sy
+                                : b.maxY;
                         }
                     }
                     hmapVZ = end;
                     if (hmapVZ < GRID) {
                         if (onProgress) onProgress(
                             70 + Math.round(hmapVZ / GRID * 30),
-                            '床高さマップを構築中...'
+                            '床・天井マップを構築中...'
                         );
                         setTimeout(hmapStep, 0);
                         return;
@@ -517,28 +546,51 @@ window.Collider = (function () {
             return _hmap[vx + vz * GRID];
         },
 
+        getCeilY: function (wx, wz) {
+            if (!_ready) return null;
+            if (_svo) return getCeilY_SVO(wx, wz);
+            if (!_bounds || !_ceilmap) return null;
+            var b  = _bounds;
+            var vx = toVox(wx, b.minX, b.sx);
+            var vz = toVox(wz, b.minZ, b.sz);
+            return _ceilmap[vx + vz * GRID];
+        },
+
         /**
-         * カメラ位置に床衝突を適用して補正後の pc.Vec3 を返す
+         * カメラ位置に床・天井衝突を適用して補正後の pc.Vec3 を返す
          * @param {pc.Vec3} pos
-         * @param {number}  eyeHeight  目線の高さ (m)
+         * @param {number}  eyeHeight  床から目線までの高さ (m)
          * @returns {pc.Vec3}
          */
         resolvePosition: function (pos, eyeHeight) {
             var out = new pc.Vec3(pos.x, pos.y, pos.z);
             if (!_ready || !_enabled) return out;
+
+            var EYE  = eyeHeight || 1.0;
+            var HEAD = 0.15;  // 頭部クリアランス (m)
+
             var floorY = this.getFloorY(pos.x, pos.z);
-            if (floorY === null) return out;
-            var minY = floorY + (eyeHeight || 1.6);
-            if (out.y < minY) out.y = minY;
+            var ceilY  = this.getCeilY(pos.x, pos.z);
+
+            if (floorY !== null) {
+                var minY = floorY + EYE;
+                if (out.y < minY) out.y = minY;
+            }
+            if (ceilY !== null) {
+                var maxY = ceilY - HEAD;
+                if (out.y > maxY) out.y = maxY;
+            }
+
             return out;
         },
 
         reset: function () {
-            _ready  = false;
-            _voxels = null;
-            _hmap   = null;
-            _bounds = null;
-            _svo    = null;
+            _ready   = false;
+            _voxels  = null;
+            _hmap    = null;
+            _ceilmap = null;
+            _bounds  = null;
+            _svo     = null;
         },
     };
 }());
