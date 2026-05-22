@@ -130,6 +130,76 @@ window.Collider = (function () {
         return null;
     }
 
+    // ---- 水平方向の壁コリジョン（XZ平面の押し出し）----
+    // カメラを半径 radius の円柱として扱い、占有ボクセルと重なった分を押し返す
+    function resolveWall(wx, wy, wz, radius) {
+        // 腰の高さでチェック（目線から 0.5m 下）
+        var checkY = wy - 0.5;
+        var pushX = 0, pushZ = 0;
+
+        if (_svo) {
+            var meta    = _svo.meta;
+            var res     = meta.voxelResolution;
+            var gMin    = meta.gridBounds.min;
+            var gMax    = meta.gridBounds.max;
+            var maxVX   = Math.ceil((gMax[0] - gMin[0]) / res);
+            var maxVY   = Math.ceil((gMax[1] - gMin[1]) / res);
+            var maxVZ   = Math.ceil((gMax[2] - gMin[2]) / res);
+            var searchR = Math.ceil(radius / res) + 1;
+            var cvx = Math.floor((wx - gMin[0]) / res);
+            var cvy = Math.max(0, Math.min(maxVY - 1, Math.floor((checkY - gMin[1]) / res)));
+            var cvz = Math.floor((wz - gMin[2]) / res);
+
+            for (var dvx = -searchR; dvx <= searchR; dvx++) {
+                for (var dvz = -searchR; dvz <= searchR; dvz++) {
+                    var vx = cvx + dvx, vz = cvz + dvz;
+                    if (vx < 0 || vz < 0 || vx >= maxVX || vz >= maxVZ) continue;
+                    if (!isVoxelOccupied_SVO(vx, cvy, vz)) continue;
+                    var vMinX = gMin[0] + vx * res;
+                    var vMinZ = gMin[2] + vz * res;
+                    var nearX = Math.max(vMinX, Math.min(wx, vMinX + res));
+                    var nearZ = Math.max(vMinZ, Math.min(wz, vMinZ + res));
+                    var dx = wx - nearX, dz = wz - nearZ;
+                    var dist = Math.sqrt(dx * dx + dz * dz);
+                    var ov = radius - dist;
+                    if (ov > 0) {
+                        if (dist < 1e-4) { pushX += radius; }
+                        else { pushX += (dx / dist) * ov; pushZ += (dz / dist) * ov; }
+                    }
+                }
+            }
+        } else if (_voxels && _bounds) {
+            var b        = _bounds;
+            var voxelW   = b.sx / (GRID - 1);
+            var voxelD   = b.sz / (GRID - 1);
+            var searchR2 = Math.ceil(radius / Math.min(voxelW, voxelD)) + 1;
+            var cvx2 = Math.max(0, Math.min(GRID - 1, Math.round((wx - b.minX) / b.sx * (GRID - 1))));
+            var cvy2 = Math.max(0, Math.min(GRID - 1, Math.round((checkY - b.minY) / b.sy * (GRID - 1))));
+            var cvz2 = Math.max(0, Math.min(GRID - 1, Math.round((wz - b.minZ) / b.sz * (GRID - 1))));
+
+            for (var dvx2 = -searchR2; dvx2 <= searchR2; dvx2++) {
+                for (var dvz2 = -searchR2; dvz2 <= searchR2; dvz2++) {
+                    var vx2 = cvx2 + dvx2, vz2 = cvz2 + dvz2;
+                    if (vx2 < 0 || vz2 < 0 || vx2 >= GRID || vz2 >= GRID) continue;
+                    if (!_voxels[vi(vx2, cvy2, vz2)]) continue;
+                    var vMinX2 = b.minX + vx2 * voxelW;
+                    var vMinZ2 = b.minZ + vz2 * voxelD;
+                    var nearX2 = Math.max(vMinX2, Math.min(wx, vMinX2 + voxelW));
+                    var nearZ2 = Math.max(vMinZ2, Math.min(wz, vMinZ2 + voxelD));
+                    var dx2 = wx - nearX2, dz2 = wz - nearZ2;
+                    var dist2 = Math.sqrt(dx2 * dx2 + dz2 * dz2);
+                    var ov2 = radius - dist2;
+                    if (ov2 > 0) {
+                        if (dist2 < 1e-4) { pushX += radius; }
+                        else { pushX += (dx2 / dist2) * ov2; pushZ += (dz2 / dist2) * ov2; }
+                    }
+                }
+            }
+        }
+
+        return { x: wx + pushX, z: wz + pushZ };
+    }
+
     // Nerfstudio 座標補正: entity に setLocalEulerAngles(-90,0,0) が適用されているため
     // PLY 座標 (x,y,z) → ワールド座標 (x, z, -y)
     function applyCorrection(x, y, z) {
@@ -566,11 +636,18 @@ window.Collider = (function () {
             var out = new pc.Vec3(pos.x, pos.y, pos.z);
             if (!_ready || !_enabled) return out;
 
-            var EYE  = eyeHeight || 1.0;
-            var HEAD = 0.15;  // 頭部クリアランス (m)
+            var EYE         = eyeHeight || 1.0;
+            var HEAD        = 0.15;   // 頭部クリアランス (m)
+            var WALL_RADIUS = 0.25;   // カメラ円柱半径 (m)
 
-            var floorY = this.getFloorY(pos.x, pos.z);
-            var ceilY  = this.getCeilY(pos.x, pos.z);
+            // 壁コリジョン（XZ平面）を先に解決
+            var xz = resolveWall(out.x, out.y, out.z, WALL_RADIUS);
+            out.x = xz.x;
+            out.z = xz.z;
+
+            // 壁補正後の XZ で床・天井を取得
+            var floorY = this.getFloorY(out.x, out.z);
+            var ceilY  = this.getCeilY(out.x, out.z);
 
             if (floorY !== null) {
                 var minY = floorY + EYE;

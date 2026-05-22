@@ -334,10 +334,13 @@ window.CameraController = (function () {
       if (_keys['KeyE'])  { _targetPos.add(new pc.Vec3(0,  spd, 0)); }
       if (_keys['KeyQ'])  { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
 
-      // 床コライダーを適用（LCC 読み込み時に構築される）
+      // 床・天井・壁コライダーを適用
       if (window.Collider && Collider.isReady() && Collider.isEnabled()) {
         var resolved = Collider.resolvePosition(_targetPos, 1.0);
-        // 壁付近で床高さマップが誤った大きな値を返す場合に急上昇するのを防ぐ
+        // XZ: 壁補正は即時適用
+        _targetPos.x = resolved.x;
+        _targetPos.z = resolved.z;
+        // Y: 壁付近で床高さマップが誤った大きな値を返す場合に急上昇するのを防ぐ
         // 上方向は最大 3m/s、下方向は即時（落下は自然に追従）
         var maxUpPerFrame = 3.0 * dt;
         if (resolved.y > _targetPos.y) {
