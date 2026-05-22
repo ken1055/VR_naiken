@@ -99,43 +99,25 @@
         UI.showError('WebGL の初期化に失敗しました。ブラウザが WebGL2 に対応しているか確認してください。');
     }
 
-    // ---- GCS フォルダURL から自動検索してロード ----
-    // https://storage.googleapis.com/BUCKET/FOLDER/ 形式のURLを受け取り
-    // フォルダ内の .ply/.splat を自動検索して loadAndRender に渡す
+    // ---- GCS フォルダURL から manifest.json を読んでロード ----
+    // フォルダ内に {"ply": "ファイル名.ply"} の manifest.json が必要
+    // listing API を使わないためバケット一覧権限が不要
     function _loadFromFolderURL(folderUrl) {
-        var clean = folderUrl.split('?')[0].replace(/\/$/, '');
-        var m = clean.match(/^https:\/\/storage\.googleapis\.com\/([^/]+)\/(.+)$/);
-        if (!m) {
-            UI.showError(
-                'GCS のフォルダ URL を入力してください\n' +
-                '例: https://storage.googleapis.com/バケット名/フォルダ名/'
-            );
-            return;
-        }
-        var bucket  = m[1];
-        var prefix  = m[2] + '/';
-        var listUrl = 'https://storage.googleapis.com/storage/v1/b/'
-            + encodeURIComponent(bucket)
-            + '/o?prefix=' + encodeURIComponent(prefix)
-            + '&delimiter=/';
+        var base = folderUrl.split('?')[0].replace(/\/$/, '');
+        var manifestUrl = base + '/manifest.json';
 
-        UI.showLoading('フォルダを検索中...');
-        fetch(listUrl)
+        UI.showLoading('読み込み中...');
+        fetch(manifestUrl)
             .then(function (r) {
-                if (!r.ok) throw new Error('フォルダ一覧の取得に失敗しました (HTTP ' + r.status + ')');
+                if (!r.ok) throw new Error(
+                    'manifest.json が見つかりません (HTTP ' + r.status + ')\n' +
+                    'フォルダ内に manifest.json を配置してください'
+                );
                 return r.json();
             })
-            .then(function (data) {
-                var items   = data.items || [];
-                var plyItem = items.find(function (item) {
-                    return /\.(ply|splat)$/i.test(item.name);
-                });
-                if (!plyItem) {
-                    UI.hideLoading();
-                    UI.showError('.ply / .splat ファイルがフォルダ内に見つかりません');
-                    return;
-                }
-                var plyUrl = 'https://storage.googleapis.com/' + bucket + '/' + plyItem.name;
+            .then(function (manifest) {
+                if (!manifest.ply) throw new Error('manifest.json に "ply" フィールドがありません');
+                var plyUrl = base + '/' + manifest.ply;
                 loadAndRender(
                     GSplatLoader.loadFromURL(app, plyUrl, function (pct) {
                         UI.showLoading('ダウンロード中... ' + pct + '%');
@@ -146,7 +128,7 @@
             })
             .catch(function (err) {
                 UI.hideLoading();
-                UI.showError('フォルダの読み込みに失敗しました: ' + (err.message || String(err)));
+                UI.showError('読み込みに失敗しました: ' + (err.message || String(err)));
             });
     }
 
