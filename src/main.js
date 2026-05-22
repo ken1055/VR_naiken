@@ -27,9 +27,7 @@
             }), false);
         },
         onURLLoaded: function (url) {
-            loadAndRender(GSplatLoader.loadFromURL(app, url, function (pct) {
-                UI.showLoading('ダウンロード中... ' + pct + '%');
-            }), true, url);
+            _loadFromURL(url);
         },
         onFolderLoaded: function (files) {
             if (!app) return;
@@ -101,6 +99,70 @@
         UI.showError('WebGL の初期化に失敗しました。ブラウザが WebGL2 に対応しているか確認してください。');
     }
 
+    // ---- GCS フォルダURL から自動検索してロード ----
+    // https://storage.googleapis.com/BUCKET/FOLDER/ 形式のURLを受け取り
+    // フォルダ内の .ply/.splat を自動検索して loadAndRender に渡す
+    function _loadFromFolderURL(folderUrl) {
+        var clean = folderUrl.split('?')[0].replace(/\/$/, '');
+        var m = clean.match(/^https:\/\/storage\.googleapis\.com\/([^/]+)\/(.+)$/);
+        if (!m) {
+            UI.showError(
+                'GCS のフォルダ URL を入力してください\n' +
+                '例: https://storage.googleapis.com/バケット名/フォルダ名/'
+            );
+            return;
+        }
+        var bucket  = m[1];
+        var prefix  = m[2] + '/';
+        var listUrl = 'https://storage.googleapis.com/storage/v1/b/'
+            + encodeURIComponent(bucket)
+            + '/o?prefix=' + encodeURIComponent(prefix)
+            + '&delimiter=/';
+
+        UI.showLoading('フォルダを検索中...');
+        fetch(listUrl)
+            .then(function (r) {
+                if (!r.ok) throw new Error('フォルダ一覧の取得に失敗しました (HTTP ' + r.status + ')');
+                return r.json();
+            })
+            .then(function (data) {
+                var items   = data.items || [];
+                var plyItem = items.find(function (item) {
+                    return /\.(ply|splat)$/i.test(item.name);
+                });
+                if (!plyItem) {
+                    UI.hideLoading();
+                    UI.showError('.ply / .splat ファイルがフォルダ内に見つかりません');
+                    return;
+                }
+                var plyUrl = 'https://storage.googleapis.com/' + bucket + '/' + plyItem.name;
+                loadAndRender(
+                    GSplatLoader.loadFromURL(app, plyUrl, function (pct) {
+                        UI.showLoading('ダウンロード中... ' + pct + '%');
+                    }),
+                    true,
+                    plyUrl
+                );
+            })
+            .catch(function (err) {
+                UI.hideLoading();
+                UI.showError('フォルダの読み込みに失敗しました: ' + (err.message || String(err)));
+            });
+    }
+
+    // ---- URLがフォルダかファイルかを判定して振り分け ----
+    function _loadFromURL(url) {
+        if (!app) { UI.showError('PlayCanvas が初期化されていません'); return; }
+        var clean = url.split('?')[0];
+        if (clean.endsWith('/') || !/\.(ply|splat)$/i.test(clean)) {
+            _loadFromFolderURL(url);
+        } else {
+            loadAndRender(GSplatLoader.loadFromURL(app, url, function (pct) {
+                UI.showLoading('ダウンロード中... ' + pct + '%');
+            }), true, url);
+        }
+    }
+
     // ---- URLパラメータから自動ロード ----
     // 使い方: ?url=https://...property.splat&title=物件名
     function _autoLoadFromParam() {
@@ -118,13 +180,7 @@
 
             if (paramURL) {
                 var decodedURL = decodeURIComponent(paramURL);
-                loadAndRender(
-                    GSplatLoader.loadFromURL(app, decodedURL, function (pct) {
-                        UI.showLoading('ダウンロード中... ' + pct + '%');
-                    }),
-                    true,      // URL由来なのでシェアボタンを表示
-                    decodedURL // コンパニオン JSON の取得に使用
-                );
+                _loadFromURL(decodedURL);
             }
         } catch (e) {
             console.warn('[Param] URLパラメータの解析に失敗:', e);
@@ -142,9 +198,7 @@
             },
             onURLLoaded: function (url) {
                 if (!app) return;
-                loadAndRender(GSplatLoader.loadFromURL(app, url, function (pct) {
-                    UI.showLoading('ダウンロード中... ' + pct + '%');
-                }), true);
+                _loadFromURL(url);
             },
             onFolderLoaded: function (files) {
                 if (!app) return;
