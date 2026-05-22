@@ -203,9 +203,9 @@ window.UI = (function () {
             // 操作説明
             var _isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
             var _helpRows = _isTouchDevice ? [
-                '<tr><td>1本指ドラッグ</td><td>視点回転</td></tr>',
-                '<tr><td>2本指ドラッグ</td><td>前後左右移動</td></tr>',
-                '<tr><td>2本指ピンチ</td><td>速度変更</td></tr>',
+                '<tr><td>左ジョイスティック</td><td>前後左右移動</td></tr>',
+                '<tr><td>右エリアドラッグ</td><td>視点回転</td></tr>',
+                '<tr><td>↑ / ↓ ボタン</td><td>上昇・下降</td></tr>',
             ] : [
                 '<tr><td>左右ドラッグ</td><td>視点回転</td></tr>',
                 '<tr><td>W / A / S / D</td><td>前後左右移動</td></tr>',
@@ -222,87 +222,85 @@ window.UI = (function () {
             helpBtn.addEventListener('click', showHelp);
             root.appendChild(helpBtn);
 
-            // バーチャルジョイスティック
-            var joyBase = el('div', { id: 'vr-joystick-base' });
-            var joyKnob = el('div', { id: 'vr-joystick-knob' });
-            joyBase.appendChild(joyKnob);
-            root.appendChild(joyBase);
+            // スマホのみ: バーチャルジョイスティック + 上下ボタン
+            if (_isTouchDevice) {
+                var joyBase = el('div', { id: 'vr-joystick-base' });
+                var joyKnob = el('div', { id: 'vr-joystick-knob' });
+                joyBase.appendChild(joyKnob);
+                root.appendChild(joyBase);
 
-            var _joyActive = false;
-            var _joyTouchId = null;
-            var _joyCx = 0, _joyCy = 0;
-            var JOY_MAX = 32; // ノブの最大変位 (px)
+                var _joyActive = false;
+                var _joyTouchId = null;
+                var _joyCx = 0, _joyCy = 0;
+                var JOY_MAX = 32;
 
-            joyBase.addEventListener('touchstart', function (e) {
-                e.preventDefault();
-                if (_joyActive) return;
-                var t = e.changedTouches[0];
-                _joyActive  = true;
-                _joyTouchId = t.identifier;
-                var r = joyBase.getBoundingClientRect();
-                _joyCx = r.left + r.width  / 2;
-                _joyCy = r.top  + r.height / 2;
-            }, { passive: false });
+                joyBase.addEventListener('touchstart', function (e) {
+                    e.preventDefault();
+                    if (_joyActive) return;
+                    var t = e.changedTouches[0];
+                    _joyActive  = true;
+                    _joyTouchId = t.identifier;
+                    var r = joyBase.getBoundingClientRect();
+                    _joyCx = r.left + r.width  / 2;
+                    _joyCy = r.top  + r.height / 2;
+                }, { passive: false });
 
-            joyBase.addEventListener('touchmove', function (e) {
-                e.preventDefault();
-                var t = null;
-                for (var i = 0; i < e.changedTouches.length; i++) {
-                    if (e.changedTouches[i].identifier === _joyTouchId) {
-                        t = e.changedTouches[i]; break;
+                joyBase.addEventListener('touchmove', function (e) {
+                    e.preventDefault();
+                    var t = null;
+                    for (var i = 0; i < e.changedTouches.length; i++) {
+                        if (e.changedTouches[i].identifier === _joyTouchId) {
+                            t = e.changedTouches[i]; break;
+                        }
                     }
-                }
-                if (!t) return;
-                var dx   = t.clientX - _joyCx;
-                var dy   = t.clientY - _joyCy;
-                var dist = Math.sqrt(dx * dx + dy * dy);
-                var clamped = Math.min(dist, JOY_MAX);
-                var ang  = Math.atan2(dy, dx);
-                var kx   = Math.cos(ang) * clamped;
-                var ky   = Math.sin(ang) * clamped;
-                joyKnob.style.transform =
-                    'translate(calc(-50% + ' + kx + 'px), calc(-50% + ' + ky + 'px))';
-                // 正規化して CameraController へ渡す（-1〜1）
-                var nx = dist > 1 ? Math.max(-1, Math.min(1, dx / JOY_MAX)) : 0;
-                var ny = dist > 1 ? Math.max(-1, Math.min(1, dy / JOY_MAX)) : 0;
-                if (window.CameraController) CameraController.setJoystick(nx, ny);
-            }, { passive: false });
+                    if (!t) return;
+                    var dx   = t.clientX - _joyCx;
+                    var dy   = t.clientY - _joyCy;
+                    var dist = Math.sqrt(dx * dx + dy * dy);
+                    var clamped = Math.min(dist, JOY_MAX);
+                    var ang  = Math.atan2(dy, dx);
+                    var kx   = Math.cos(ang) * clamped;
+                    var ky   = Math.sin(ang) * clamped;
+                    joyKnob.style.transform =
+                        'translate(calc(-50% + ' + kx + 'px), calc(-50% + ' + ky + 'px))';
+                    var nx = dist > 1 ? Math.max(-1, Math.min(1, dx / JOY_MAX)) : 0;
+                    var ny = dist > 1 ? Math.max(-1, Math.min(1, dy / JOY_MAX)) : 0;
+                    if (window.CameraController) CameraController.setJoystick(nx, ny);
+                }, { passive: false });
 
-            function joyEnd(e) {
-                e.preventDefault();
-                _joyActive  = false;
-                _joyTouchId = null;
-                joyKnob.style.transform = 'translate(-50%, -50%)';
-                if (window.CameraController) CameraController.setJoystick(0, 0);
-            }
-            joyBase.addEventListener('touchend',    joyEnd, { passive: false });
-            joyBase.addEventListener('touchcancel', joyEnd, { passive: false });
-
-            // 上下移動ボタン
-            var btnUp   = el('button', { className: 'vr-move-btn', title: '上昇', textContent: '↑' });
-            var btnDown = el('button', { className: 'vr-move-btn', title: '下降', textContent: '↓' });
-            root.appendChild(el('div', { id: 'vr-move-btns' }, [btnUp, btnDown]));
-
-            function bindMoveBtn(btn, dir) {
-                function start(e) {
+                function joyEnd(e) {
                     e.preventDefault();
-                    btn.classList.add('pressed');
-                    if (window.CameraController) CameraController.setVertical(dir);
+                    _joyActive  = false;
+                    _joyTouchId = null;
+                    joyKnob.style.transform = 'translate(-50%, -50%)';
+                    if (window.CameraController) CameraController.setJoystick(0, 0);
                 }
-                function end(e) {
-                    e.preventDefault();
-                    btn.classList.remove('pressed');
-                    if (window.CameraController) CameraController.setVertical(0);
+                joyBase.addEventListener('touchend',    joyEnd, { passive: false });
+                joyBase.addEventListener('touchcancel', joyEnd, { passive: false });
+
+                // 上下移動ボタン
+                var btnUp   = el('button', { className: 'vr-move-btn', title: '上昇', textContent: '↑' });
+                var btnDown = el('button', { className: 'vr-move-btn', title: '下降', textContent: '↓' });
+                root.appendChild(el('div', { id: 'vr-move-btns' }, [btnUp, btnDown]));
+
+                function bindMoveBtn(btn, dir) {
+                    function start(e) {
+                        e.preventDefault();
+                        btn.classList.add('pressed');
+                        if (window.CameraController) CameraController.setVertical(dir);
+                    }
+                    function end(e) {
+                        e.preventDefault();
+                        btn.classList.remove('pressed');
+                        if (window.CameraController) CameraController.setVertical(0);
+                    }
+                    btn.addEventListener('touchstart',  start, { passive: false });
+                    btn.addEventListener('touchend',    end,   { passive: false });
+                    btn.addEventListener('touchcancel', end,   { passive: false });
                 }
-                btn.addEventListener('touchstart',  start, { passive: false });
-                btn.addEventListener('touchend',    end,   { passive: false });
-                btn.addEventListener('touchcancel', end,   { passive: false });
-                btn.addEventListener('mousedown',   start);
-                btn.addEventListener('mouseup',     end);
-                btn.addEventListener('mouseleave',  end);
+                bindMoveBtn(btnUp,   1);
+                bindMoveBtn(btnDown, -1);
             }
-            bindMoveBtn(btnUp,   1);
-            bindMoveBtn(btnDown, -1);
 
             // ステータスバー
             _elStatusBar = el('div', { id: 'vr-status-bar', className: 'hidden' });
