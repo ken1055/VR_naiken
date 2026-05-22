@@ -52,7 +52,8 @@ window.CameraController = (function () {
   var _lastPinchDist = null;
 
   // 感度
-  var LOOK_SENSITIVITY   = 0.08;  // deg / px
+  var LOOK_SENSITIVITY       = 0.08;  // deg / px (PC)
+  var TOUCH_LOOK_SENSITIVITY = 0.20;  // deg / px (スマホ)
   var ORBIT_SENSITIVITY  = 0.15;  // deg / px
   var WHEEL_SPEED_FACTOR = 1.15;
   var TOUCH_PAN_FACTOR   = 0.004; // m/px per (m/s) of moveSpeed
@@ -235,8 +236,8 @@ window.CameraController = (function () {
       // 1本指ドラッグ: FPS 回転 → ターゲット更新
       var dx = curTouches[0].clientX - _touches[0].clientX;
       var dy = curTouches[0].clientY - _touches[0].clientY;
-      _targetYaw   += dx * LOOK_SENSITIVITY;
-      _targetPitch += dy * LOOK_SENSITIVITY;
+      _targetYaw   += dx * TOUCH_LOOK_SENSITIVITY;
+      _targetPitch += dy * TOUCH_LOOK_SENSITIVITY;
       _targetPitch  = clamp(_targetPitch, -89, 89);
     } else if (curTouches.length === 2 && _touches.length === 2) {
       // 2本指ピンチ: 移動速度変更
