@@ -287,6 +287,7 @@
                         if (config && config.initialCamera) {
                             var c = config.initialCamera;
                             CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
+                            if (window._adminSetInitialCamera) window._adminSetInitialCamera(config.initialCamera);
                         }
                         if (config && config.teleports && config.teleports.length) {
                             Teleporter.load(config.teleports, _onTeleport);
@@ -407,6 +408,7 @@
                 if (config && config.initialCamera) {
                     var c = config.initialCamera;
                     CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
+                    if (window._adminSetInitialCamera) window._adminSetInitialCamera(config.initialCamera);
                 }
                 if (config && config.teleports && config.teleports.length) {
                     Teleporter.load(config.teleports, _onTeleport);
