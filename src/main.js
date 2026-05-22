@@ -90,6 +90,7 @@
 
         // テレポートシステム初期化
         Teleporter.init(app);
+        Teleporter.setOnActivate(_onTeleport);
         app.on('update', function () {
             if (cameraEntity) Teleporter.update(cameraEntity.getPosition());
         });

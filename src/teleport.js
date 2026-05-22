@@ -92,6 +92,8 @@ window.Teleporter = (function () {
             if (window.UI) UI.setTeleportPrompt(null, null);
         },
 
+        setOnActivate: function (fn) { _onActivate = fn; },
+
         getPoints: function () { return _points.slice(); },
 
         addPoint: function (point) {
