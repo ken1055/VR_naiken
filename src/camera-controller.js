@@ -53,7 +53,7 @@ window.CameraController = (function () {
 
   // 感度
   var LOOK_SENSITIVITY       = 0.08;  // deg / px (PC)
-  var TOUCH_LOOK_SENSITIVITY = 0.20;  // deg / px (スマホ)
+  var TOUCH_LOOK_SENSITIVITY = 0.15;  // deg / px (スマホ)
   var ORBIT_SENSITIVITY  = 0.15;  // deg / px
   var WHEEL_SPEED_FACTOR = 1.15;
   var TOUCH_PAN_FACTOR   = 0.004; // m/px per (m/s) of moveSpeed
