@@ -290,6 +290,7 @@
                         }
                         if (config && config.teleports && config.teleports.length) {
                             Teleporter.load(config.teleports, _onTeleport);
+                            if (window._adminSetTeleports) window._adminSetTeleports(config.teleports);
                         }
                     } catch (e) {}
                 };
@@ -409,6 +410,7 @@
                 }
                 if (config && config.teleports && config.teleports.length) {
                     Teleporter.load(config.teleports, _onTeleport);
+                    if (window._adminSetTeleports) window._adminSetTeleports(config.teleports);
                 }
                 _applyPendingTeleportState();
             })

@@ -11,7 +11,7 @@ window.UI = (function () {
 
         /* スピナー */
         '#vr-loading {',
-        '  position: fixed; inset: 0; z-index: 200;',
+        '  position: fixed; inset: 0; z-index: 260;',
         '  display: flex; flex-direction: column;',
         '  align-items: center; justify-content: center; gap: 18px;',
         '  background: rgba(0,4,12,0.9);',
