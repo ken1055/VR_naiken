@@ -40,6 +40,9 @@ window.CameraController = (function () {
   // キー状態
   var _keys = {};
 
+  // モバイル上下移動ボタン (-1 / 0 / 1)
+  var _mobileVertical = 0;
+
   // タッチ状態
   var _touches = [];
   var _lastPinchDist = null;
@@ -331,8 +334,9 @@ window.CameraController = (function () {
       if (_keys['KeyS'] || _keys['ArrowDown'])   { _targetPos.add(fwd.clone().scale(-spd)); }
       if (_keys['KeyD'] || _keys['ArrowRight'])  { _targetPos.add(right.clone().scale(spd)); }
       if (_keys['KeyA'] || _keys['ArrowLeft'])   { _targetPos.add(right.clone().scale(-spd)); }
-      if (_keys['KeyQ'])  { _targetPos.add(new pc.Vec3(0,  spd, 0)); }
-      if (_keys['KeyE'])  { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
+      if (_keys['KeyQ'])       { _targetPos.add(new pc.Vec3(0,  spd, 0)); }
+      if (_keys['KeyE'])       { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
+      if (_mobileVertical !== 0) { _targetPos.add(new pc.Vec3(0, _mobileVertical * spd, 0)); }
 
       // 床・天井・壁コライダーを適用
       if (window.Collider && Collider.isReady() && Collider.isEnabled()) {
@@ -392,6 +396,11 @@ window.CameraController = (function () {
         yaw:   Math.round(_targetYaw   * 10)   / 10,
         pitch: Math.round(_targetPitch * 10)   / 10
       };
+    },
+
+    /** モバイル上下ボタンから呼ぶ (-1=下降 / 0=停止 / 1=上昇) */
+    setVertical: function (v) {
+      _mobileVertical = v;
     },
 
     /** 位置・向きを即時セット（コンパニオン JSON 適用用） */

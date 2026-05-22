@@ -96,6 +96,23 @@ window.UI = (function () {
         '  background: rgba(0,212,170,0.12);',
         '  border-color: rgba(0,212,170,0.4); color: #00D4AA; }',
 
+        /* 上下移動ボタン */
+        '#vr-move-btns {',
+        '  position: fixed; bottom: 20px; right: 60px; z-index: 120;',
+        '  display: flex; flex-direction: column; gap: 8px; }',
+        '.vr-move-btn {',
+        '  width: 48px; height: 48px; border-radius: 50%;',
+        '  background: rgba(0,4,12,0.85);',
+        '  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);',
+        '  border: 1px solid rgba(0,212,170,0.2);',
+        '  color: rgba(0,212,170,0.7); font-size: 20px; line-height: 1;',
+        '  cursor: pointer; display: flex; align-items: center; justify-content: center;',
+        '  user-select: none; -webkit-user-select: none; touch-action: none;',
+        '  transition: background 0.1s, border-color 0.1s, color 0.1s; }',
+        '.vr-move-btn.pressed {',
+        '  background: rgba(0,212,170,0.18);',
+        '  border-color: rgba(0,212,170,0.55); color: #00D4AA; }',
+
         /* ステータスバー */
         '#vr-status-bar {',
         '  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);',
@@ -188,6 +205,32 @@ window.UI = (function () {
             var helpBtn = el('button', { id: 'vr-help-btn', title: '操作説明', textContent: '?' });
             helpBtn.addEventListener('click', showHelp);
             root.appendChild(helpBtn);
+
+            // 上下移動ボタン
+            var btnUp   = el('button', { className: 'vr-move-btn', title: '上昇', textContent: '↑' });
+            var btnDown = el('button', { className: 'vr-move-btn', title: '下降', textContent: '↓' });
+            root.appendChild(el('div', { id: 'vr-move-btns' }, [btnUp, btnDown]));
+
+            function bindMoveBtn(btn, dir) {
+                function start(e) {
+                    e.preventDefault();
+                    btn.classList.add('pressed');
+                    if (window.CameraController) CameraController.setVertical(dir);
+                }
+                function end(e) {
+                    e.preventDefault();
+                    btn.classList.remove('pressed');
+                    if (window.CameraController) CameraController.setVertical(0);
+                }
+                btn.addEventListener('touchstart',  start, { passive: false });
+                btn.addEventListener('touchend',    end,   { passive: false });
+                btn.addEventListener('touchcancel', end,   { passive: false });
+                btn.addEventListener('mousedown',   start);
+                btn.addEventListener('mouseup',     end);
+                btn.addEventListener('mouseleave',  end);
+            }
+            bindMoveBtn(btnUp,   1);
+            bindMoveBtn(btnDown, -1);
 
             // ステータスバー
             _elStatusBar = el('div', { id: 'vr-status-bar', className: 'hidden' });
