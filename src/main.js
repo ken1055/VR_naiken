@@ -97,6 +97,17 @@
         // UI に app を渡して再コールバック登録
         _rebindCallbacks();
 
+        // 管理者ページ用公開 API
+        window._vrLoad = {
+            fromURL: _loadFromURL,
+            fromFile: function (file) {
+                loadAndRender(GSplatLoader.loadFromFile(app, file, function (pct) {
+                    UI.showLoading('読み込み中... ' + pct + '%');
+                }), false);
+            },
+            fromFolder: loadFolderAndRender,
+        };
+
         // ?url= パラメータから自動ロード
         _autoLoadFromParam();
 
