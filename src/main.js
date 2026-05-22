@@ -235,6 +235,7 @@
             if (showShare) UI.showShareButton();
         }).catch(function (err) {
             UI.hideLoading();
+            UI.hideFade();
             UI.showError(err.message || String(err));
             console.error(err);
         });
@@ -327,6 +328,7 @@
             }
         }).catch(function (err) {
             UI.hideLoading();
+            UI.hideFade();
             UI.showError(err.message || String(err));
             console.error(err);
         });
