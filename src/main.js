@@ -227,6 +227,7 @@
             _updateAdminCurrentJSON(asset.name, sourceURL);
             UI.hideLoading();
             UI.hideEmptyState();
+            UI.showHelp();
             if (showShare) UI.showShareButton();
         }).catch(function (err) {
             UI.hideLoading();
@@ -268,6 +269,7 @@
             _updateAdminCurrentJSON(asset.name, null);
             UI.hideLoading();
             UI.hideEmptyState();
+            UI.showHelp();
 
             // カメラ位置 JSON を適用
             if (jsonFile) {

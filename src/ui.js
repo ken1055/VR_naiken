@@ -230,6 +230,7 @@ window.UI = (function () {
             if (_elStatusBar) _elStatusBar.classList.add('hidden');
         },
 
+        showHelp:         function ()    { showHelp(); },
         showTooltip:      function (msg) { this.showInfo(msg); },
         updateCallbacks:  function (cb)  { Object.assign(_callbacks, cb); },
 
