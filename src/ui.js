@@ -141,6 +141,33 @@ window.UI = (function () {
         '  font-family: system-ui, sans-serif; pointer-events: none;',
         '  transition: opacity 0.3s; }',
         '#vr-status-bar.hidden { display: none; }',
+
+        '#vr-teleport-prompt {',
+        '  position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);',
+        '  z-index: 130; display: flex; flex-direction: column; align-items: center; gap: 10px;',
+        '  transition: opacity 0.3s; white-space: nowrap; }',
+        '#vr-teleport-prompt.hidden { display: none; }',
+        '#vr-teleport-label {',
+        '  padding: 8px 20px; border-radius: 99px;',
+        '  background: rgba(0,4,12,0.92);',
+        '  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);',
+        '  border: 1px solid rgba(0,212,170,0.2);',
+        '  color: rgba(0,212,170,0.9); font-size: 13px;',
+        '  font-family: system-ui, sans-serif; }',
+        '#vr-teleport-btn {',
+        '  padding: 10px 28px; border-radius: 99px;',
+        '  background: rgba(0,212,170,0.12);',
+        '  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);',
+        '  border: 1.5px solid rgba(0,212,170,0.45);',
+        '  color: #00D4AA; font-size: 13px; font-weight: 700;',
+        '  cursor: pointer; font-family: system-ui, sans-serif; transition: all 0.15s; }',
+        '#vr-teleport-btn:hover {',
+        '  background: rgba(0,212,170,0.22); border-color: rgba(0,212,170,0.75); }',
+
+        '#vr-fade-overlay {',
+        '  position: fixed; inset: 0; z-index: 250; background: #000;',
+        '  opacity: 0; pointer-events: none; transition: opacity 0.4s; }',
+        '#vr-fade-overlay.active { opacity: 1; pointer-events: all; }',
     ].join('\n');
 
     var _elLoading     = null;
@@ -148,8 +175,13 @@ window.UI = (function () {
     var _elToastCont   = null;
     var _elHelpOverlay = null;
     var _helpTimer     = null;
-    var _elStatusBar   = null;
-    var _callbacks     = {};
+    var _elStatusBar      = null;
+    var _elTeleportPrompt = null;
+    var _elTeleportLabel  = null;
+    var _elTeleportBtn    = null;
+    var _elFadeOverlay    = null;
+    var _teleportClick    = null;
+    var _callbacks        = {};
 
     function el(tag, attrs, children) {
         var node = document.createElement(tag);
@@ -306,6 +338,20 @@ window.UI = (function () {
             _elStatusBar = el('div', { id: 'vr-status-bar', className: 'hidden' });
             root.appendChild(_elStatusBar);
 
+            // テレポートプロンプト
+            _elTeleportLabel  = el('div', { id: 'vr-teleport-label' });
+            _elTeleportBtn    = el('button', { id: 'vr-teleport-btn', textContent: 'ここへ移動' });
+            _elTeleportPrompt = el('div', { id: 'vr-teleport-prompt', className: 'hidden' },
+                [_elTeleportLabel, _elTeleportBtn]);
+            _elTeleportBtn.addEventListener('click', function () {
+                if (_teleportClick) _teleportClick();
+            });
+            root.appendChild(_elTeleportPrompt);
+
+            // フェードオーバーレイ
+            _elFadeOverlay = el('div', { id: 'vr-fade-overlay' });
+            root.appendChild(_elFadeOverlay);
+
             showHelp();
         },
 
@@ -341,6 +387,26 @@ window.UI = (function () {
 
         hideStatus: function () {
             if (_elStatusBar) _elStatusBar.classList.add('hidden');
+        },
+
+        setTeleportPrompt: function (point, onClick) {
+            if (!_elTeleportPrompt) return;
+            if (!point) {
+                _elTeleportPrompt.classList.add('hidden');
+                _teleportClick = null;
+                return;
+            }
+            _elTeleportLabel.textContent = point.label || 'テレポート';
+            _teleportClick = onClick;
+            _elTeleportPrompt.classList.remove('hidden');
+        },
+
+        showFade: function () {
+            if (_elFadeOverlay) _elFadeOverlay.classList.add('active');
+        },
+
+        hideFade: function () {
+            if (_elFadeOverlay) _elFadeOverlay.classList.remove('active');
         },
 
         showHelp:         function ()    { showHelp(); },

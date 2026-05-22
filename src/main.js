@@ -15,6 +15,7 @@
 
     var app = null;
     var cameraEntity = null;
+    var _pendingTeleportCamera = null;
 
     // 管理者ページから参照: 現在読み込まれているシーンの保存先 JSON ファイル名
     window._adminCurrentJSONName = null;
@@ -86,6 +87,12 @@
         // カメラ・VR コントローラー初期化
         CameraController.init(app, cameraEntity);
         VRMode.init(app, cameraEntity);
+
+        // テレポートシステム初期化
+        Teleporter.init(app);
+        app.on('update', function () {
+            if (cameraEntity) Teleporter.update(cameraEntity.getPosition());
+        });
 
         // UI に app を渡して再コールバック登録
         _rebindCallbacks();
@@ -199,12 +206,15 @@
         }
         UI.showLoading('読み込み中...');
         promise.then(function (asset) {
+            Teleporter.reset();
             GSplatRenderer.disposeAll();
             GSplatRenderer.create(app, asset);
             if (sourceURL) {
-                _applyCompanionJSON(sourceURL);
-                _tryLoadCompanionVoxel(sourceURL);  // splat-transform SVO を優先
-                _tryLoadCompanionHmap(sourceURL);   // 管理者生成 hmap をフォールバック
+                _applyCompanionJSON(sourceURL);  // handles fade + pending camera
+                _tryLoadCompanionVoxel(sourceURL);
+                _tryLoadCompanionHmap(sourceURL);
+            } else {
+                _applyPendingTeleportState();
             }
             _updateAdminCurrentJSON(asset.name, sourceURL);
             UI.hideLoading();
@@ -246,6 +256,7 @@
         GSplatLoader.loadFromFile(app, plyFile, function (pct) {
             UI.showLoading('読み込み中... ' + pct + '%');
         }).then(function (asset) {
+            Teleporter.reset();
             GSplatRenderer.disposeAll();
             GSplatRenderer.create(app, asset);
             _updateAdminCurrentJSON(asset.name, null);
@@ -253,7 +264,7 @@
             UI.hideEmptyState();
             UI.showHelp();
 
-            // カメラ位置 JSON を適用
+            // カメラ位置 JSON・テレポートを適用
             if (jsonFile) {
                 var jr = new FileReader();
                 jr.readAsText(jsonFile);
@@ -264,9 +275,13 @@
                             var c = config.initialCamera;
                             CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
                         }
+                        if (config && config.teleports && config.teleports.length) {
+                            Teleporter.load(config.teleports, _onTeleport);
+                        }
                     } catch (e) {}
                 };
             }
+            _applyPendingTeleportState();
 
             // コリジョン適用 (SVO 優先 → hmap フォールバック)
             if (voxelJson && voxelBin && window.Collider) {
@@ -369,20 +384,37 @@
     function _applyCompanionJSON(url) {
         var base    = url.split('?')[0];
         var jsonURL = base.replace(/\.(ply|splat)$/i, '.json');
-        if (jsonURL === base) return; // 対応拡張子なし
+        if (jsonURL === base) { _applyPendingTeleportState(); return; }
 
         fetch(jsonURL)
             .then(function (res) { return res.ok ? res.json() : null; })
             .then(function (config) {
-                if (!config || !config.initialCamera) return;
-                var c = config.initialCamera;
-                CameraController.teleport(
-                    c.x || 0, c.y || 0, c.z || 0,
-                    c.yaw || 0, c.pitch || 0
-                );
-                console.log('[VR 内見] コンパニオン JSON から初期カメラを適用:', c);
+                if (config && config.initialCamera) {
+                    var c = config.initialCamera;
+                    CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
+                }
+                if (config && config.teleports && config.teleports.length) {
+                    Teleporter.load(config.teleports, _onTeleport);
+                }
+                _applyPendingTeleportState();
             })
-            .catch(function () {});
+            .catch(function () { _applyPendingTeleportState(); });
+    }
+
+    function _onTeleport(point) {
+        if (!point || !point.destinationUrl) return;
+        _pendingTeleportCamera = point.destinationCamera || null;
+        UI.showFade();
+        setTimeout(function () { _loadFromURL(point.destinationUrl); }, 400);
+    }
+
+    function _applyPendingTeleportState() {
+        if (_pendingTeleportCamera) {
+            var c = _pendingTeleportCamera;
+            _pendingTeleportCamera = null;
+            CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
+        }
+        UI.hideFade();
     }
 
 })();
