@@ -43,6 +43,10 @@ window.CameraController = (function () {
   // モバイル上下移動ボタン (-1 / 0 / 1)
   var _mobileVertical = 0;
 
+  // バーチャルジョイスティック入力 (-1〜1)
+  var _joystickX = 0;  // 右(+) / 左(-)
+  var _joystickY = 0;  // 下(+) / 上(-) ← 画面座標なので前進は -Y
+
   // タッチ状態
   var _touches = [];
   var _lastPinchDist = null;
@@ -337,6 +341,10 @@ window.CameraController = (function () {
       if (_keys['KeyQ'])       { _targetPos.add(new pc.Vec3(0,  spd, 0)); }
       if (_keys['KeyE'])       { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
       if (_mobileVertical !== 0) { _targetPos.add(new pc.Vec3(0, _mobileVertical * spd, 0)); }
+      if (_joystickX !== 0 || _joystickY !== 0) {
+        _targetPos.add(fwd.clone().scale(-_joystickY * spd));
+        _targetPos.add(right.clone().scale(_joystickX * spd));
+      }
 
       // 床・天井・壁コライダーを適用
       if (window.Collider && Collider.isReady() && Collider.isEnabled()) {
@@ -401,6 +409,12 @@ window.CameraController = (function () {
     /** モバイル上下ボタンから呼ぶ (-1=下降 / 0=停止 / 1=上昇) */
     setVertical: function (v) {
       _mobileVertical = v;
+    },
+
+    /** バーチャルジョイスティックから呼ぶ (x: 左右, y: 前後・画面座標) */
+    setJoystick: function (x, y) {
+      _joystickX = x;
+      _joystickY = y;
     },
 
     /** 位置・向きを即時セット（コンパニオン JSON 適用用） */

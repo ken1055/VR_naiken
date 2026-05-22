@@ -96,6 +96,22 @@ window.UI = (function () {
         '  background: rgba(0,212,170,0.12);',
         '  border-color: rgba(0,212,170,0.4); color: #00D4AA; }',
 
+        /* バーチャルジョイスティック */
+        '#vr-joystick-base {',
+        '  position: fixed; left: 32px; bottom: 60px; z-index: 120;',
+        '  width: 110px; height: 110px; border-radius: 50%;',
+        '  background: rgba(0,4,12,0.55);',
+        '  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);',
+        '  border: 2px solid rgba(0,212,170,0.2);',
+        '  touch-action: none; }',
+        '#vr-joystick-knob {',
+        '  position: absolute; width: 48px; height: 48px; border-radius: 50%;',
+        '  top: 50%; left: 50%; transform: translate(-50%, -50%);',
+        '  background: rgba(0,212,170,0.35);',
+        '  border: 2px solid rgba(0,212,170,0.75);',
+        '  pointer-events: none;',
+        '  transition: transform 0.05s; }',
+
         /* 上下移動ボタン */
         '#vr-move-btns {',
         '  position: fixed; bottom: 20px; right: 60px; z-index: 120;',
@@ -205,6 +221,62 @@ window.UI = (function () {
             var helpBtn = el('button', { id: 'vr-help-btn', title: '操作説明', textContent: '?' });
             helpBtn.addEventListener('click', showHelp);
             root.appendChild(helpBtn);
+
+            // バーチャルジョイスティック
+            var joyBase = el('div', { id: 'vr-joystick-base' });
+            var joyKnob = el('div', { id: 'vr-joystick-knob' });
+            joyBase.appendChild(joyKnob);
+            root.appendChild(joyBase);
+
+            var _joyActive = false;
+            var _joyTouchId = null;
+            var _joyCx = 0, _joyCy = 0;
+            var JOY_MAX = 32; // ノブの最大変位 (px)
+
+            joyBase.addEventListener('touchstart', function (e) {
+                e.preventDefault();
+                if (_joyActive) return;
+                var t = e.changedTouches[0];
+                _joyActive  = true;
+                _joyTouchId = t.identifier;
+                var r = joyBase.getBoundingClientRect();
+                _joyCx = r.left + r.width  / 2;
+                _joyCy = r.top  + r.height / 2;
+            }, { passive: false });
+
+            joyBase.addEventListener('touchmove', function (e) {
+                e.preventDefault();
+                var t = null;
+                for (var i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === _joyTouchId) {
+                        t = e.changedTouches[i]; break;
+                    }
+                }
+                if (!t) return;
+                var dx   = t.clientX - _joyCx;
+                var dy   = t.clientY - _joyCy;
+                var dist = Math.sqrt(dx * dx + dy * dy);
+                var clamped = Math.min(dist, JOY_MAX);
+                var ang  = Math.atan2(dy, dx);
+                var kx   = Math.cos(ang) * clamped;
+                var ky   = Math.sin(ang) * clamped;
+                joyKnob.style.transform =
+                    'translate(calc(-50% + ' + kx + 'px), calc(-50% + ' + ky + 'px))';
+                // 正規化して CameraController へ渡す（-1〜1）
+                var nx = dist > 1 ? Math.max(-1, Math.min(1, dx / JOY_MAX)) : 0;
+                var ny = dist > 1 ? Math.max(-1, Math.min(1, dy / JOY_MAX)) : 0;
+                if (window.CameraController) CameraController.setJoystick(nx, ny);
+            }, { passive: false });
+
+            function joyEnd(e) {
+                e.preventDefault();
+                _joyActive  = false;
+                _joyTouchId = null;
+                joyKnob.style.transform = 'translate(-50%, -50%)';
+                if (window.CameraController) CameraController.setJoystick(0, 0);
+            }
+            joyBase.addEventListener('touchend',    joyEnd, { passive: false });
+            joyBase.addEventListener('touchcancel', joyEnd, { passive: false });
 
             // 上下移動ボタン
             var btnUp   = el('button', { className: 'vr-move-btn', title: '上昇', textContent: '↑' });
