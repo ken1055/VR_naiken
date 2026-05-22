@@ -331,8 +331,8 @@ window.CameraController = (function () {
       if (_keys['KeyS'] || _keys['ArrowDown'])   { _targetPos.add(fwd.clone().scale(-spd)); }
       if (_keys['KeyD'] || _keys['ArrowRight'])  { _targetPos.add(right.clone().scale(spd)); }
       if (_keys['KeyA'] || _keys['ArrowLeft'])   { _targetPos.add(right.clone().scale(-spd)); }
-      if (_keys['KeyE'])  { _targetPos.add(new pc.Vec3(0,  spd, 0)); }
-      if (_keys['KeyQ'])  { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
+      if (_keys['KeyQ'])  { _targetPos.add(new pc.Vec3(0,  spd, 0)); }
+      if (_keys['KeyE'])  { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
 
       // 床・天井・壁コライダーを適用
       if (window.Collider && Collider.isReady() && Collider.isEnabled()) {

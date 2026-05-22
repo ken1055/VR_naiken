@@ -636,8 +636,8 @@ window.UI = (function () {
             ] : [
                 '<tr><td>左右ドラッグ</td><td>視点回転</td></tr>',
                 '<tr><td>W / A / S / D</td><td>前後左右移動</td></tr>',
-                '<tr><td>E</td><td>上昇</td></tr>',
-                '<tr><td>Q</td><td>下降</td></tr>',
+                '<tr><td>Q</td><td>上昇</td></tr>',
+                '<tr><td>E</td><td>下降</td></tr>',
                 '<tr><td>ホイール</td><td>移動速度変更</td></tr>',
                 '<tr><td>F</td><td>原点リセット</td></tr>',
             ];
