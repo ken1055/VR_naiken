@@ -402,7 +402,7 @@
         var jsonURL = base.replace(/\.(ply|splat)$/i, '.json');
         if (jsonURL === base) { _applyPendingTeleportState(); return; }
 
-        fetch(jsonURL)
+        fetch(jsonURL, { cache: 'no-store' })
             .then(function (res) { return res.ok ? res.json() : null; })
             .then(function (config) {
                 if (config && config.initialCamera) {
