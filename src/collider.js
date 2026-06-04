@@ -327,6 +327,101 @@ window.Collider = (function () {
         return { n: nV, stride: stride, xo: xo, yo: yo, zo: zo, dataStart: dataStart };
     }
 
+    // ---- OBJ メッシュパーサー — 三角形をサンプリングして点群を生成 ----
+    // GenRecon 等が出力する PBR メッシュ (.obj) からコリジョン点群を生成する
+    function parseOBJToPoints(buffer) {
+        var text = new TextDecoder().decode(buffer);
+        var lines = text.split('\n');
+
+        var vxArr = [], vyArr = [], vzArr = [];
+        var faces = [];  // flat triplets [i0, i1, i2, ...]
+
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.length < 4) continue;
+            var c0 = line.charCodeAt(0);
+            var c1 = line.charCodeAt(1);
+
+            if (c0 === 118 && c1 === 32) {  // 'v '
+                var tok = line.trim().split(/\s+/);
+                vxArr.push(+tok[1]);
+                vyArr.push(+tok[2]);
+                vzArr.push(+tok[3]);
+            } else if (c0 === 102 && c1 === 32) {  // 'f '
+                var tok = line.trim().split(/\s+/);
+                var idx = [];
+                for (var j = 1; j < tok.length; j++) {
+                    if (!tok[j]) continue;
+                    var slash = tok[j].indexOf('/');
+                    var vi = +(slash >= 0 ? tok[j].slice(0, slash) : tok[j]);
+                    if (!vi) continue;
+                    if (vi < 0) vi = vxArr.length + vi + 1;
+                    idx.push(vi - 1);  // 1-indexed → 0-indexed
+                }
+                // ポリゴン → 扇形三角分割
+                for (var j = 1; j < idx.length - 1; j++) {
+                    faces.push(idx[0], idx[j], idx[j + 1]);
+                }
+            }
+        }
+
+        var nV = vxArr.length;
+        var nF = faces.length / 3;
+        if (nV === 0) throw new Error('OBJ に頂点データが見つかりません');
+        if (nF === 0) throw new Error('OBJ に面データが見つかりません');
+
+        // BBOX からボクセルサイズを推定（サンプリング密度の基準）
+        var bMinX = Infinity, bMaxX = -Infinity;
+        var bMinY = Infinity, bMaxY = -Infinity;
+        var bMinZ = Infinity, bMaxZ = -Infinity;
+        for (var i = 0; i < nV; i++) {
+            if (vxArr[i] < bMinX) bMinX = vxArr[i]; if (vxArr[i] > bMaxX) bMaxX = vxArr[i];
+            if (vyArr[i] < bMinY) bMinY = vyArr[i]; if (vyArr[i] > bMaxY) bMaxY = vyArr[i];
+            if (vzArr[i] < bMinZ) bMinZ = vzArr[i]; if (vzArr[i] > bMaxZ) bMaxZ = vzArr[i];
+        }
+        var sceneSize = Math.max(bMaxX - bMinX, bMaxY - bMinY, bMaxZ - bMinZ, 1e-3);
+        var voxelSize = sceneSize / GRID;
+
+        // 各三角形をバリセントリックサンプリング
+        var outPts = [];
+        for (var fi = 0; fi < nF; fi++) {
+            var i0 = faces[fi * 3], i1 = faces[fi * 3 + 1], i2 = faces[fi * 3 + 2];
+            if (i0 < 0 || i1 < 0 || i2 < 0 || i0 >= nV || i1 >= nV || i2 >= nV) continue;
+
+            var ax = vxArr[i0], ay = vyArr[i0], az = vzArr[i0];
+            var bx = vxArr[i1], by = vyArr[i1], bz = vzArr[i1];
+            var cx = vxArr[i2], cy = vyArr[i2], cz = vzArr[i2];
+
+            var eABx = bx - ax, eABy = by - ay, eABz = bz - az;
+            var eACx = cx - ax, eACy = cy - ay, eACz = cz - az;
+            var eBCx = cx - bx, eBCy = cy - by, eBCz = cz - bz;
+
+            var maxEdge = Math.max(
+                Math.sqrt(eABx * eABx + eABy * eABy + eABz * eABz),
+                Math.sqrt(eACx * eACx + eACy * eACy + eACz * eACz),
+                Math.sqrt(eBCx * eBCx + eBCy * eBCy + eBCz * eBCz)
+            );
+
+            var N = Math.min(64, Math.max(1, Math.ceil(maxEdge / voxelSize)));
+            var invN = 1.0 / N;
+
+            for (var si = 0; si <= N; si++) {
+                var s = si * invN;
+                for (var sj = 0; sj <= N - si; sj++) {
+                    var t = sj * invN;
+                    var w = 1.0 - s - t;
+                    outPts.push(
+                        ax * w + bx * s + cx * t,
+                        ay * w + by * s + cy * t,
+                        az * w + bz * s + cz * t
+                    );
+                }
+            }
+        }
+
+        return { pts: new Float32Array(outPts), n: outPts.length / 3 };
+    }
+
     // ---- 公開 API ----
     return {
         isReady:   function () { return _ready; },
@@ -443,7 +538,7 @@ window.Collider = (function () {
 
             // --- Phase 0: ヘッダー解析（同期・高速）---
             setTimeout(function () {
-                var n, stride, xo, yo, zo, dataStart, isSplat;
+                var n, stride, xo, yo, zo, dataStart, isSplat, isOBJ, pts;
                 try {
                     if (onProgress) onProgress(1, 'ヘッダーを解析中...');
                     var ext = (filename || '').split('.').pop().toLowerCase();
@@ -451,6 +546,12 @@ window.Collider = (function () {
                         isSplat   = true;
                         n         = Math.floor(buffer.byteLength / 32);
                         stride    = 32; xo = 0; yo = 4; zo = 8; dataStart = 0;
+                    } else if (ext === 'obj') {
+                        isOBJ = true;
+                        if (onProgress) onProgress(3, 'OBJを解析中...');
+                        var parsed = parseOBJToPoints(buffer);
+                        pts = parsed.pts;
+                        n   = parsed.n;
                     } else {
                         isSplat = false;
                         var h   = parsePLYHeader(buffer);
@@ -463,9 +564,9 @@ window.Collider = (function () {
                     return;
                 }
 
-                // --- Phase 1: 頂点データを分割読み込み ---
-                var pts      = new Float32Array(n * 3);
-                var dv       = new DataView(buffer, dataStart);
+                // --- Phase 1: 頂点データを分割読み込み（PLY/splat のみ）---
+                if (!isOBJ) pts = new Float32Array(n * 3);
+                var dv       = isOBJ ? null : new DataView(buffer, dataStart);
                 var parseIdx = 0;
 
                 function parseStep() {
@@ -594,8 +695,13 @@ window.Collider = (function () {
                     if (onDone) onDone(null);
                 }
 
-                if (onProgress) onProgress(2, 'ファイルをパース中...');
-                setTimeout(parseStep, 0);
+                if (isOBJ) {
+                    if (onProgress) onProgress(25, 'バウンディングボックス計算中...');
+                    setTimeout(bboxStep, 0);
+                } else {
+                    if (onProgress) onProgress(2, 'ファイルをパース中...');
+                    setTimeout(parseStep, 0);
+                }
             }, 0);
         },
 
