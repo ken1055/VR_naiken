@@ -154,6 +154,9 @@
     // ---- URLがフォルダかファイルかを判定して振り分け ----
     function _loadFromURL(url) {
         if (!app) { UI.showError('PlayCanvas が初期化されていません'); return; }
+        // URL から新シーンに切り替えるので、ローカルフォルダの紐付けを切る
+        // （別物件のフォルダに誤って保存しないため）
+        if (window._adminClearFolderHandle) window._adminClearFolderHandle();
         var clean = url.split('?')[0];
         if (clean.endsWith('/') || !/\.(ply|splat)$/i.test(clean)) {
             _loadFromFolderURL(url);
@@ -277,24 +280,34 @@
             UI.hideEmptyState();
             UI.showHelp();
 
-            // カメラ位置 JSON・テレポートを適用
+            // カメラ位置 JSON・テレポートを適用（管理者状態は常に同期）
             if (jsonFile) {
                 var jr = new FileReader();
                 jr.readAsText(jsonFile);
                 jr.onload = function () {
+                    var initialCam = null;
+                    var teleports  = [];
                     try {
                         var config = JSON.parse(jr.result);
-                        if (config && config.initialCamera) {
-                            var c = config.initialCamera;
-                            CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
-                            if (window._adminSetInitialCamera) window._adminSetInitialCamera(config.initialCamera);
-                        }
-                        if (config && config.teleports && config.teleports.length) {
-                            Teleporter.load(config.teleports, _onTeleport);
-                            if (window._adminSetTeleports) window._adminSetTeleports(config.teleports);
+                        if (config) {
+                            initialCam = config.initialCamera || null;
+                            teleports  = config.teleports     || [];
                         }
                     } catch (e) {}
+                    if (initialCam) {
+                        CameraController.teleport(
+                            initialCam.x || 0, initialCam.y || 0, initialCam.z || 0,
+                            initialCam.yaw || 0, initialCam.pitch || 0
+                        );
+                    }
+                    if (teleports.length) Teleporter.load(teleports, _onTeleport);
+                    if (window._adminSetInitialCamera) window._adminSetInitialCamera(initialCam);
+                    if (window._adminSetTeleports)     window._adminSetTeleports(teleports);
                 };
+            } else {
+                // JSON ファイル自体がない → 前シーンの値が残らないようリセット
+                if (window._adminSetInitialCamera) window._adminSetInitialCamera(null);
+                if (window._adminSetTeleports)     window._adminSetTeleports([]);
             }
             _applyPendingTeleportState();
 
@@ -405,18 +418,25 @@
         fetch(jsonURL, { cache: 'no-store' })
             .then(function (res) { return res.ok ? res.json() : null; })
             .then(function (config) {
-                if (config && config.initialCamera) {
-                    var c = config.initialCamera;
-                    CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
-                    if (window._adminSetInitialCamera) window._adminSetInitialCamera(config.initialCamera);
+                var initialCam = (config && config.initialCamera) || null;
+                var teleports  = (config && config.teleports)     || [];
+                if (initialCam) {
+                    CameraController.teleport(
+                        initialCam.x || 0, initialCam.y || 0, initialCam.z || 0,
+                        initialCam.yaw || 0, initialCam.pitch || 0
+                    );
                 }
-                if (config && config.teleports && config.teleports.length) {
-                    Teleporter.load(config.teleports, _onTeleport);
-                    if (window._adminSetTeleports) window._adminSetTeleports(config.teleports);
-                }
+                if (teleports.length) Teleporter.load(teleports, _onTeleport);
+                // 管理者状態は常に同期する（前シーンの値が残らないように）
+                if (window._adminSetInitialCamera) window._adminSetInitialCamera(initialCam);
+                if (window._adminSetTeleports)     window._adminSetTeleports(teleports);
                 _applyPendingTeleportState();
             })
-            .catch(function () { _applyPendingTeleportState(); });
+            .catch(function () {
+                if (window._adminSetInitialCamera) window._adminSetInitialCamera(null);
+                if (window._adminSetTeleports)     window._adminSetTeleports([]);
+                _applyPendingTeleportState();
+            });
     }
 
     function _onTeleport(point) {
