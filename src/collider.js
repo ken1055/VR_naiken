@@ -9,10 +9,9 @@ window.Collider = (function () {
     var GRID = 128;      // レガシー: ボクセルグリッド 1辺の解像度
     var GRID2 = GRID * GRID;
 
-    // 密度しきい値: 1ボクセルあたり何点以上を「占有」とみなすか
-    // ノイズフロート（孤立した1点）を排除して床・壁・天井を robust に検出
-    var FLOOR_DENSITY = 3;   // 床・天井マップ用（しっかり面になっていること）
-    var WALL_DENSITY  = 2;   // 壁コリジョン用
+    // 床・壁・天井検出しきい値は buildAsync 内で点数に応じて動的に決める。
+    // 固定値だと、スパースな PLY（数十万点）で大半のセルが「床なし」になる。
+    var _wallDensity = 1;    // resolveWall 用（buildAsync が更新）
 
     // ロバスト bbox: 全点の min/max ではなくパーセンタイルで bbox を決める
     // ノイズフロートに引きずられて grid 分解能が落ちるのを防ぐ
@@ -192,7 +191,7 @@ window.Collider = (function () {
                 for (var dvz2 = -searchR2; dvz2 <= searchR2; dvz2++) {
                     var vx2 = cvx2 + dvx2, vz2 = cvz2 + dvz2;
                     if (vx2 < 0 || vz2 < 0 || vx2 >= GRID || vz2 >= GRID) continue;
-                    if (_voxels[vi(vx2, cvy2, vz2)] < WALL_DENSITY) continue;
+                    if (_voxels[vi(vx2, cvy2, vz2)] < _wallDensity) continue;
                     var vMinX2 = b.minX + vx2 * voxelW;
                     var vMinZ2 = b.minZ + vz2 * voxelD;
                     var nearX2 = Math.max(vMinX2, Math.min(wx, vMinX2 + voxelW));
@@ -383,8 +382,16 @@ window.Collider = (function () {
             try {
                 if (!data || !data.bounds || !data.hmap) throw new Error('不正なフォーマット');
                 _bounds  = data.bounds;
-                _hmap    = new Float32Array(data.hmap);
-                _ceilmap = data.ceilmap ? new Float32Array(data.ceilmap) : null;
+                // JSON シリアライズで NaN → null になっているので NaN に戻す
+                function toFloatArrayWithNaN(src) {
+                    var arr = new Float32Array(src.length);
+                    for (var i = 0; i < src.length; i++) {
+                        arr[i] = src[i] == null ? NaN : src[i];
+                    }
+                    return arr;
+                }
+                _hmap    = toFloatArrayWithNaN(data.hmap);
+                _ceilmap = data.ceilmap ? toFloatArrayWithNaN(data.ceilmap) : null;
                 _ready   = true;
                 console.log('[Collider] hmap 読み込み完了 — grid:', data.grid);
                 if (onDone) onDone(null);
@@ -636,35 +643,70 @@ window.Collider = (function () {
                     }
 
                     // Phase 3 完了 → Phase 4
-                    _hmap    = new Float32Array(GRID2).fill(_bounds.minY);
-                    _ceilmap = new Float32Array(GRID2).fill(_bounds.maxY);
-                    if (onProgress) onProgress(70, '床・天井マップを構築中...');
+                    // 点密度に応じてしきい値を決める（過剰フィルタで「床なし」になるのを防ぐ）
+                    var avgDensity   = n / (GRID * GRID * GRID);
+                    var floorDensity = Math.max(1, Math.min(4, Math.round(avgDensity * 4)));
+                    _wallDensity     = Math.max(1, Math.min(3, Math.round(avgDensity * 2)));
+                    // 床ロバスト検出: 連続 THICK ボクセル占有を要求して孤立スパイクを除去
+                    // 高密度ほど厳しく（ノイズも多くなる）
+                    var thick = avgDensity > 1.0 ? 2 : 1;
+
+                    _hmap    = new Float32Array(GRID2);
+                    _ceilmap = new Float32Array(GRID2);
+                    _hmap.fill(NaN);    // NaN = 未検出 → 床補正をかけない
+                    _ceilmap.fill(NaN);
+
+                    if (onProgress) onProgress(
+                        70,
+                        '床・天井マップを構築中... (密度=' + avgDensity.toFixed(2) +
+                        ', 床しきい値=' + floorDensity + ', 厚さ=' + thick + ')'
+                    );
+                    hmapFloorDensity = floorDensity;
+                    hmapThick        = thick;
                     setTimeout(hmapStep, 0);
                 }
 
                 // --- Phase 4: 床高さマップ（分割）---
                 var hmapVZ = 0;
+                var hmapFloorDensity = 1;
+                var hmapThick        = 1;
 
                 function hmapStep() {
                     var end = Math.min(hmapVZ + HMAP_ROWS, GRID);
-                    var b = _bounds;
+                    var b   = _bounds;
+                    var FD  = hmapFloorDensity;
+                    var TH  = hmapThick;
                     for (var vz = hmapVZ; vz < end; vz++) {
                         for (var vx = 0; vx < GRID; vx++) {
                             var botVY = -1, topVY = -1;
-                            // 床: 下から走査して FLOOR_DENSITY 以上の最初のボクセル（孤立ノイズ無視）
+                            // 床: 下から走査、TH ボクセル連続して占有された最初の run の開始位置
+                            var runStart = -1, runLen = 0;
                             for (var vy = 0; vy < GRID; vy++) {
-                                if (_voxels[vi(vx, vy, vz)] >= FLOOR_DENSITY) { botVY = vy; break; }
+                                if (_voxels[vi(vx, vy, vz)] >= FD) {
+                                    if (runStart < 0) runStart = vy;
+                                    runLen++;
+                                    if (runLen >= TH) { botVY = runStart; break; }
+                                } else {
+                                    runStart = -1; runLen = 0;
+                                }
                             }
-                            // 天井: 上から走査して FLOOR_DENSITY 以上の最初のボクセル
+                            // 天井: 上から走査
+                            runStart = -1; runLen = 0;
                             for (var vy2 = GRID - 1; vy2 >= 0; vy2--) {
-                                if (_voxels[vi(vx, vy2, vz)] >= FLOOR_DENSITY) { topVY = vy2; break; }
+                                if (_voxels[vi(vx, vy2, vz)] >= FD) {
+                                    if (runStart < 0) runStart = vy2;
+                                    runLen++;
+                                    if (runLen >= TH) { topVY = runStart; break; }
+                                } else {
+                                    runStart = -1; runLen = 0;
+                                }
                             }
                             _hmap[vx + vz * GRID] = botVY >= 0
                                 ? b.minY + (botVY / (GRID - 1)) * b.sy
-                                : b.minY;
+                                : NaN;
                             _ceilmap[vx + vz * GRID] = topVY >= 0
                                 ? b.minY + (topVY / (GRID - 1)) * b.sy
-                                : b.maxY;
+                                : NaN;
                         }
                     }
                     hmapVZ = end;
@@ -698,11 +740,12 @@ window.Collider = (function () {
         getFloorY: function (wx, wz) {
             if (!_ready) return null;
             if (_svo) return getFloorY_SVO(wx, wz);
-            if (!_bounds) return null;
+            if (!_bounds || !_hmap) return null;
             var b  = _bounds;
             var vx = toVox(wx, b.minX, b.sx);
             var vz = toVox(wz, b.minZ, b.sz);
-            return _hmap[vx + vz * GRID];
+            var v  = _hmap[vx + vz * GRID];
+            return isNaN(v) ? null : v;   // NaN は未検出
         },
 
         getCeilY: function (wx, wz) {
@@ -712,7 +755,8 @@ window.Collider = (function () {
             var b  = _bounds;
             var vx = toVox(wx, b.minX, b.sx);
             var vz = toVox(wz, b.minZ, b.sz);
-            return _ceilmap[vx + vz * GRID];
+            var v  = _ceilmap[vx + vz * GRID];
+            return isNaN(v) ? null : v;
         },
 
         /**
