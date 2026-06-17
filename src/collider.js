@@ -6,8 +6,19 @@
 window.Collider = (function () {
     'use strict';
 
-    var GRID = 96;       // レガシー: ボクセルグリッド 1辺の解像度
+    var GRID = 128;      // レガシー: ボクセルグリッド 1辺の解像度
     var GRID2 = GRID * GRID;
+
+    // 密度しきい値: 1ボクセルあたり何点以上を「占有」とみなすか
+    // ノイズフロート（孤立した1点）を排除して床・壁・天井を robust に検出
+    var FLOOR_DENSITY = 3;   // 床・天井マップ用（しっかり面になっていること）
+    var WALL_DENSITY  = 2;   // 壁コリジョン用
+
+    // ロバスト bbox: 全点の min/max ではなくパーセンタイルで bbox を決める
+    // ノイズフロートに引きずられて grid 分解能が落ちるのを防ぐ
+    var HIST_BUCKETS  = 256;
+    var ROBUST_LOW    = 0.003;   // 下側 0.3% を切り捨て
+    var ROBUST_HIGH   = 0.997;   // 上側 0.3% を切り捨て
 
     var _ready   = false;
     var _enabled = true;
@@ -181,7 +192,7 @@ window.Collider = (function () {
                 for (var dvz2 = -searchR2; dvz2 <= searchR2; dvz2++) {
                     var vx2 = cvx2 + dvx2, vz2 = cvz2 + dvz2;
                     if (vx2 < 0 || vz2 < 0 || vx2 >= GRID || vz2 >= GRID) continue;
-                    if (!_voxels[vi(vx2, cvy2, vz2)]) continue;
+                    if (_voxels[vi(vx2, cvy2, vz2)] < WALL_DENSITY) continue;
                     var vMinX2 = b.minX + vx2 * voxelW;
                     var vMinZ2 = b.minZ + vz2 * voxelD;
                     var nearX2 = Math.max(vMinX2, Math.min(wx, vMinX2 + voxelW));
@@ -438,6 +449,7 @@ window.Collider = (function () {
             // 1 tick あたりに処理する頂点数（メインスレッドを ~4ms 以内に抑える目安）
             var PARSE_BATCH = 3000;
             var BBOX_BATCH  = 3000;
+            var HIST_BATCH  = 3000;
             var VOXEL_BATCH = 3000;
             var HMAP_ROWS   = 3;
 
@@ -507,24 +519,91 @@ window.Collider = (function () {
                     bboxIdx = end;
                     if (bboxIdx < n) {
                         if (onProgress) onProgress(
-                            25 + Math.round(bboxIdx / n * 15),
+                            25 + Math.round(bboxIdx / n * 10),
                             'バウンディングボックス計算中...'
                         );
                         setTimeout(bboxStep, 0);
                         return;
                     }
 
-                    // BBOX 完了 → bounds 確定
-                    var pad = 0.5;
+                    // 生 BBOX 完了 → ヒストグラムでロバスト bbox を計算
+                    rawMinX = minX; rawMaxX = maxX;
+                    rawMinY = minY; rawMaxY = maxY;
+                    rawMinZ = minZ; rawMaxZ = maxZ;
+                    rangeX = rawMaxX - rawMinX || 1;
+                    rangeY = rawMaxY - rawMinY || 1;
+                    rangeZ = rawMaxZ - rawMinZ || 1;
+                    histX = new Uint32Array(HIST_BUCKETS);
+                    histY = new Uint32Array(HIST_BUCKETS);
+                    histZ = new Uint32Array(HIST_BUCKETS);
+
+                    if (onProgress) onProgress(35, 'バウンディングボックスを精密化中...');
+                    setTimeout(histStep, 0);
+                }
+
+                // --- Phase 2b: パーセンタイル bbox（ノイズフロート除去）---
+                var rawMinX, rawMaxX, rawMinY, rawMaxY, rawMinZ, rawMaxZ;
+                var rangeX, rangeY, rangeZ;
+                var histX, histY, histZ;
+                var histIdx = 0;
+
+                function histStep() {
+                    var end = Math.min(histIdx + HIST_BATCH, n);
+                    var LAST = HIST_BUCKETS - 1;
+                    for (var i = histIdx; i < end; i++) {
+                        var c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
+                        var ix = Math.floor((c.cx - rawMinX) / rangeX * HIST_BUCKETS);
+                        var iy = Math.floor((c.cy - rawMinY) / rangeY * HIST_BUCKETS);
+                        var iz = Math.floor((c.cz - rawMinZ) / rangeZ * HIST_BUCKETS);
+                        if (ix < 0) ix = 0; else if (ix > LAST) ix = LAST;
+                        if (iy < 0) iy = 0; else if (iy > LAST) iy = LAST;
+                        if (iz < 0) iz = 0; else if (iz > LAST) iz = LAST;
+                        histX[ix]++; histY[iy]++; histZ[iz]++;
+                    }
+                    histIdx = end;
+                    if (histIdx < n) {
+                        if (onProgress) onProgress(
+                            35 + Math.round(histIdx / n * 10),
+                            'バウンディングボックスを精密化中...'
+                        );
+                        setTimeout(histStep, 0);
+                        return;
+                    }
+
+                    function pct(hist, total, p) {
+                        var target = total * p;
+                        var cumul  = 0;
+                        for (var i = 0; i < HIST_BUCKETS; i++) {
+                            cumul += hist[i];
+                            if (cumul >= target) return i;
+                        }
+                        return HIST_BUCKETS - 1;
+                    }
+
+                    var loX = pct(histX, n, ROBUST_LOW), hiX = pct(histX, n, ROBUST_HIGH);
+                    var loY = pct(histY, n, ROBUST_LOW), hiY = pct(histY, n, ROBUST_HIGH);
+                    var loZ = pct(histZ, n, ROBUST_LOW), hiZ = pct(histZ, n, ROBUST_HIGH);
+
+                    minX = rawMinX + loX       / HIST_BUCKETS * rangeX;
+                    maxX = rawMinX + (hiX + 1) / HIST_BUCKETS * rangeX;
+                    minY = rawMinY + loY       / HIST_BUCKETS * rangeY;
+                    maxY = rawMinY + (hiY + 1) / HIST_BUCKETS * rangeY;
+                    minZ = rawMinZ + loZ       / HIST_BUCKETS * rangeZ;
+                    maxZ = rawMinZ + (hiZ + 1) / HIST_BUCKETS * rangeZ;
+
+                    var pad = 0.3;
                     minX -= pad; maxX += pad;
                     minY -= pad; maxY += pad;
                     minZ -= pad; maxZ += pad;
                     var sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
                     _bounds = { minX:minX, maxX:maxX, minY:minY, maxY:maxY,
                                 minZ:minZ, maxZ:maxZ, sx:sx, sy:sy, sz:sz };
-                    _voxels = new Uint8Array(GRID * GRID * GRID);
+                    _voxels = new Uint16Array(GRID * GRID * GRID);  // 占有 → 点数カウント
 
-                    if (onProgress) onProgress(40, 'ボクセル占有フラグを構築中...');
+                    // ヒストグラムは不要になったので解放
+                    histX = histY = histZ = null;
+
+                    if (onProgress) onProgress(45, 'ボクセル密度を集計中...');
                     setTimeout(voxelStep, 0);
                 }
 
@@ -536,13 +615,21 @@ window.Collider = (function () {
                     var b = _bounds;
                     for (var i = voxelIdx; i < end; i++) {
                         var c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
-                        _voxels[vi(toVox(c.cx, b.minX, b.sx), toVox(c.cy, b.minY, b.sy), toVox(c.cz, b.minZ, b.sz))] = 1;
+                        // bbox 外のフロートは数えない（edge にクランプすると密度が偽造される）
+                        if (c.cx < b.minX || c.cx > b.maxX) continue;
+                        if (c.cy < b.minY || c.cy > b.maxY) continue;
+                        if (c.cz < b.minZ || c.cz > b.maxZ) continue;
+                        var vx = Math.min(GRID - 1, Math.floor((c.cx - b.minX) / b.sx * GRID));
+                        var vy = Math.min(GRID - 1, Math.floor((c.cy - b.minY) / b.sy * GRID));
+                        var vz = Math.min(GRID - 1, Math.floor((c.cz - b.minZ) / b.sz * GRID));
+                        var idx = vi(vx, vy, vz);
+                        if (_voxels[idx] < 0xFFFF) _voxels[idx]++;  // 飽和加算
                     }
                     voxelIdx = end;
                     if (voxelIdx < n) {
                         if (onProgress) onProgress(
-                            40 + Math.round(voxelIdx / n * 30),
-                            'ボクセル占有フラグを構築中...'
+                            45 + Math.round(voxelIdx / n * 25),
+                            'ボクセル密度を集計中...'
                         );
                         setTimeout(voxelStep, 0);
                         return;
@@ -564,11 +651,13 @@ window.Collider = (function () {
                     for (var vz = hmapVZ; vz < end; vz++) {
                         for (var vx = 0; vx < GRID; vx++) {
                             var botVY = -1, topVY = -1;
+                            // 床: 下から走査して FLOOR_DENSITY 以上の最初のボクセル（孤立ノイズ無視）
                             for (var vy = 0; vy < GRID; vy++) {
-                                if (_voxels[vi(vx, vy, vz)]) { botVY = vy; break; }
+                                if (_voxels[vi(vx, vy, vz)] >= FLOOR_DENSITY) { botVY = vy; break; }
                             }
+                            // 天井: 上から走査して FLOOR_DENSITY 以上の最初のボクセル
                             for (var vy2 = GRID - 1; vy2 >= 0; vy2--) {
-                                if (_voxels[vi(vx, vy2, vz)]) { topVY = vy2; break; }
+                                if (_voxels[vi(vx, vy2, vz)] >= FLOOR_DENSITY) { topVY = vy2; break; }
                             }
                             _hmap[vx + vz * GRID] = botVY >= 0
                                 ? b.minY + (botVY / (GRID - 1)) * b.sy
@@ -637,8 +726,8 @@ window.Collider = (function () {
             if (!_ready || !_enabled) return out;
 
             var EYE         = eyeHeight || 1.0;
-            var HEAD        = 0.15;   // 頭部クリアランス (m)
-            var WALL_RADIUS = 0.25;   // カメラ円柱半径 (m)
+            var HEAD        = 0.05;   // 頭部クリアランス (m) — 大きいと天井下で詰まる
+            var WALL_RADIUS = 0.08;   // カメラ円柱半径 (m) — 小さいほど身軽に動ける
 
             // 壁コリジョン（XZ平面）を先に解決
             var xz = resolveWall(out.x, out.y, out.z, WALL_RADIUS);
