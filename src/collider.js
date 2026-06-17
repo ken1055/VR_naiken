@@ -6,18 +6,20 @@
 window.Collider = (function () {
     'use strict';
 
-    var GRID = 128;      // レガシー: ボクセルグリッド 1辺の解像度
+    var GRID  = 128;            // ボクセルグリッド 1辺の解像度
     var GRID2 = GRID * GRID;
-
-    // 床・壁・天井検出しきい値は buildAsync 内で点数に応じて動的に決める。
-    // 固定値だと、スパースな PLY（数十万点）で大半のセルが「床なし」になる。
-    var _wallDensity = 1;    // resolveWall 用（buildAsync が更新）
+    var GRID3 = GRID * GRID * GRID;
 
     // ロバスト bbox: 全点の min/max ではなくパーセンタイルで bbox を決める
     // ノイズフロートに引きずられて grid 分解能が落ちるのを防ぐ
     var HIST_BUCKETS  = 256;
     var ROBUST_LOW    = 0.003;   // 下側 0.3% を切り捨て
     var ROBUST_HIGH   = 0.997;   // 上側 0.3% を切り捨て
+
+    // 連結成分フィルタ: ノイズフロートを「孤立した小さなクラスタ」として削除する
+    // splat-transform の --filter-cluster と同じ発想（接続性で判定）
+    var MIN_CLUSTER_VOXELS = 100;    // 絶対最小サイズ（〜10cm³ 相当）
+    var MIN_CLUSTER_RATIO  = 0.01;   // 最大クラスタに対する比率（1%以下のクラスタは削除）
 
     var _ready   = false;
     var _enabled = true;
@@ -191,7 +193,7 @@ window.Collider = (function () {
                 for (var dvz2 = -searchR2; dvz2 <= searchR2; dvz2++) {
                     var vx2 = cvx2 + dvx2, vz2 = cvz2 + dvz2;
                     if (vx2 < 0 || vz2 < 0 || vx2 >= GRID || vz2 >= GRID) continue;
-                    if (_voxels[vi(vx2, cvy2, vz2)] < _wallDensity) continue;
+                    if (!_voxels[vi(vx2, cvy2, vz2)]) continue;
                     var vMinX2 = b.minX + vx2 * voxelW;
                     var vMinZ2 = b.minZ + vz2 * voxelD;
                     var nearX2 = Math.max(vMinX2, Math.min(wx, vMinX2 + voxelW));
@@ -440,8 +442,16 @@ window.Collider = (function () {
 
         /**
          * バッファから非同期でコライダーを構築（全フェーズを分割処理）
-         * Phase0: ヘッダー解析  Phase1: 頂点データ読み込み
-         * Phase2: BBOX 計算    Phase3: ボクセル埋め  Phase4: 床高さマップ
+         *   Phase 0: ヘッダー解析
+         *   Phase 1: 頂点データ読み込み
+         *   Phase 2: 生 BBOX → パーセンタイル BBOX（フロート除去）
+         *   Phase 3: ボクセル密度を集計（Uint16）
+         *   Phase 4: 二値化 → 連結成分フィルタ（小さなクラスタ = 浮遊ノイズを削除）
+         *   Phase 5: 床・天井マップを生成（未検出セルは NaN）
+         *
+         * splat-transform の --filter-cluster と同じ発想で接続性によってノイズを除く。
+         * SVO ファイル（.voxel.json/.bin）が用意できる場合はそちらを優先（loadVoxelFiles）。
+         *
          * @param {ArrayBuffer} buffer
          * @param {string} filename  (.ply または .splat)
          * @param {function} onProgress  (percent:number, msg:string) => void
@@ -615,7 +625,8 @@ window.Collider = (function () {
                 }
 
                 // --- Phase 3: ボクセル埋め（分割）---
-                var voxelIdx = 0;
+                var voxelIdx   = 0;
+                var solidCount = 0;   // Phase 3→4 をまたぐ統計
 
                 function voxelStep() {
                     var end = Math.min(voxelIdx + VOXEL_BATCH, n);
@@ -635,71 +646,123 @@ window.Collider = (function () {
                     voxelIdx = end;
                     if (voxelIdx < n) {
                         if (onProgress) onProgress(
-                            45 + Math.round(voxelIdx / n * 25),
+                            45 + Math.round(voxelIdx / n * 20),
                             'ボクセル密度を集計中...'
                         );
                         setTimeout(voxelStep, 0);
                         return;
                     }
 
-                    // Phase 3 完了 → Phase 4
-                    // 点密度に応じてしきい値を決める（過剰フィルタで「床なし」になるのを防ぐ）
-                    var avgDensity   = n / (GRID * GRID * GRID);
-                    var floorDensity = Math.max(1, Math.min(4, Math.round(avgDensity * 4)));
-                    _wallDensity     = Math.max(1, Math.min(3, Math.round(avgDensity * 2)));
-                    // 床ロバスト検出: 連続 THICK ボクセル占有を要求して孤立スパイクを除去
-                    // 高密度ほど厳しく（ノイズも多くなる）
-                    var thick = avgDensity > 1.0 ? 2 : 1;
+                    // Phase 3 完了 → Phase 4: 二値化 + 連結成分フィルタ
+                    // 密度しきい値は点数比例で軽くノイズを落とす程度（CC フィルタが本命）
+                    var avgDensity = n / GRID3;
+                    var solidThresh = Math.max(1, Math.min(3, Math.round(avgDensity * 2)));
+
+                    // Uint16Array(counts) → Uint8Array(solid bool) に置き換え
+                    var solid = new Uint8Array(GRID3);
+                    solidCount = 0;
+                    for (var i = 0; i < GRID3; i++) {
+                        if (_voxels[i] >= solidThresh) {
+                            solid[i] = 1;
+                            solidCount++;
+                        }
+                    }
+                    _voxels = solid;  // 以降は boolean grid
+
+                    if (onProgress) onProgress(
+                        68,
+                        '連結成分フィルタ中... (solid voxels=' + solidCount + ', 閾値=' + solidThresh + ')'
+                    );
+                    setTimeout(ccStep, 0);
+                }
+
+                // --- Phase 4: 連結成分フィルタ（浮遊スプラット除去）---
+                // BFS で 6-連結ラベリングし、大きなクラスタだけ残す
+                function ccStep() {
+                    var solid = _voxels;
+                    var labels = new Int32Array(GRID3);   // 0 = empty, >0 = label
+                    var sizes  = [0];                     // sizes[i] = label i のボクセル数
+                    var queue  = new Int32Array(GRID3);   // BFS キュー
+                    var nextLabel = 1;
+                    var maxSize   = 0;
+
+                    for (var start = 0; start < GRID3; start++) {
+                        if (!solid[start] || labels[start]) continue;
+                        var head = 0, tail = 0;
+                        queue[tail++] = start;
+                        labels[start] = nextLabel;
+                        var size = 1;
+                        while (head < tail) {
+                            var idx = queue[head++];
+                            var vx_ = idx % GRID;
+                            var rem = (idx - vx_) / GRID;
+                            var vy_ = rem % GRID;
+                            var vz_ = (rem - vy_) / GRID;
+                            // 6-neighbors
+                            var nb;
+                            if (vx_ > 0)        { nb = idx - 1;     if (solid[nb] && !labels[nb]) { labels[nb] = nextLabel; queue[tail++] = nb; size++; } }
+                            if (vx_ < GRID - 1) { nb = idx + 1;     if (solid[nb] && !labels[nb]) { labels[nb] = nextLabel; queue[tail++] = nb; size++; } }
+                            if (vy_ > 0)        { nb = idx - GRID;  if (solid[nb] && !labels[nb]) { labels[nb] = nextLabel; queue[tail++] = nb; size++; } }
+                            if (vy_ < GRID - 1) { nb = idx + GRID;  if (solid[nb] && !labels[nb]) { labels[nb] = nextLabel; queue[tail++] = nb; size++; } }
+                            if (vz_ > 0)        { nb = idx - GRID2; if (solid[nb] && !labels[nb]) { labels[nb] = nextLabel; queue[tail++] = nb; size++; } }
+                            if (vz_ < GRID - 1) { nb = idx + GRID2; if (solid[nb] && !labels[nb]) { labels[nb] = nextLabel; queue[tail++] = nb; size++; } }
+                        }
+                        sizes.push(size);
+                        if (size > maxSize) maxSize = size;
+                        nextLabel++;
+                    }
+
+                    // クラスタサイズしきい値: 最大の MIN_CLUSTER_RATIO 以下 or MIN_CLUSTER_VOXELS 未満は削除
+                    // ただし最大クラスタは常に残す（極端に小さなシーンで全て消えるのを防ぐ）
+                    var threshold = Math.max(MIN_CLUSTER_VOXELS, Math.round(maxSize * MIN_CLUSTER_RATIO));
+                    if (threshold > maxSize) threshold = maxSize;
+                    var keptLabels = new Uint8Array(nextLabel);
+                    var keptCount  = 0;
+                    var keptVoxels = 0;
+                    for (var L = 1; L < nextLabel; L++) {
+                        if (sizes[L] >= threshold) {
+                            keptLabels[L] = 1;
+                            keptCount++;
+                            keptVoxels += sizes[L];
+                        }
+                    }
+
+                    // フィルタ適用: 残すクラスタの voxel だけ solid に残す
+                    for (var i = 0; i < GRID3; i++) {
+                        if (!keptLabels[labels[i]]) solid[i] = 0;
+                    }
+
+                    console.log(
+                        '[Collider] CC filter — clusters:', nextLabel - 1,
+                        '/ kept:', keptCount,
+                        '/ threshold:', threshold,
+                        '/ kept voxels:', keptVoxels, '/', solidCount
+                    );
 
                     _hmap    = new Float32Array(GRID2);
                     _ceilmap = new Float32Array(GRID2);
                     _hmap.fill(NaN);    // NaN = 未検出 → 床補正をかけない
                     _ceilmap.fill(NaN);
 
-                    if (onProgress) onProgress(
-                        70,
-                        '床・天井マップを構築中... (密度=' + avgDensity.toFixed(2) +
-                        ', 床しきい値=' + floorDensity + ', 厚さ=' + thick + ')'
-                    );
-                    hmapFloorDensity = floorDensity;
-                    hmapThick        = thick;
+                    if (onProgress) onProgress(80, '床・天井マップを構築中...');
                     setTimeout(hmapStep, 0);
                 }
 
-                // --- Phase 4: 床高さマップ（分割）---
+                // --- Phase 5: 床・天井マップ（CC フィルタ済み solid から直接）---
                 var hmapVZ = 0;
-                var hmapFloorDensity = 1;
-                var hmapThick        = 1;
 
                 function hmapStep() {
                     var end = Math.min(hmapVZ + HMAP_ROWS, GRID);
                     var b   = _bounds;
-                    var FD  = hmapFloorDensity;
-                    var TH  = hmapThick;
                     for (var vz = hmapVZ; vz < end; vz++) {
                         for (var vx = 0; vx < GRID; vx++) {
                             var botVY = -1, topVY = -1;
-                            // 床: 下から走査、TH ボクセル連続して占有された最初の run の開始位置
-                            var runStart = -1, runLen = 0;
+                            // CC フィルタ後はノイズが無いので最低/最高占有ボクセルがそのまま床/天井
                             for (var vy = 0; vy < GRID; vy++) {
-                                if (_voxels[vi(vx, vy, vz)] >= FD) {
-                                    if (runStart < 0) runStart = vy;
-                                    runLen++;
-                                    if (runLen >= TH) { botVY = runStart; break; }
-                                } else {
-                                    runStart = -1; runLen = 0;
-                                }
+                                if (_voxels[vi(vx, vy, vz)]) { botVY = vy; break; }
                             }
-                            // 天井: 上から走査
-                            runStart = -1; runLen = 0;
                             for (var vy2 = GRID - 1; vy2 >= 0; vy2--) {
-                                if (_voxels[vi(vx, vy2, vz)] >= FD) {
-                                    if (runStart < 0) runStart = vy2;
-                                    runLen++;
-                                    if (runLen >= TH) { topVY = runStart; break; }
-                                } else {
-                                    runStart = -1; runLen = 0;
-                                }
+                                if (_voxels[vi(vx, vy2, vz)]) { topVY = vy2; break; }
                             }
                             _hmap[vx + vz * GRID] = botVY >= 0
                                 ? b.minY + (botVY / (GRID - 1)) * b.sy
@@ -712,7 +775,7 @@ window.Collider = (function () {
                     hmapVZ = end;
                     if (hmapVZ < GRID) {
                         if (onProgress) onProgress(
-                            70 + Math.round(hmapVZ / GRID * 30),
+                            80 + Math.round(hmapVZ / GRID * 20),
                             '床・天井マップを構築中...'
                         );
                         setTimeout(hmapStep, 0);
