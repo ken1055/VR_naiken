@@ -21,11 +21,13 @@ window.Collider = (function () {
     var MIN_CLUSTER_VOXELS = 100;    // 絶対最小サイズ（〜10cm³ 相当）
     var MIN_CLUSTER_RATIO  = 0.01;   // 最大クラスタに対する比率（1%以下のクラスタは削除）
 
-    var _ready   = false;
-    var _enabled = true;
-    var _voxels  = null;     // レガシー Uint8Array[GRID^3]
-    var _hmap    = null;     // レガシー Float32Array[GRID^2]
-    var _bounds  = null;     // レガシー { minX,maxX,minY,maxY,minZ,maxZ,sx,sy,sz }
+    var _ready    = false;
+    var _enabled  = true;
+    var _voxels   = null;    // Uint8Array[GRID^3] — buildAsync 中の3D solid mask
+    var _hmap     = null;    // Float32Array[GRID^2] — 床高さマップ
+    var _bounds   = null;    // { minX,maxX,minY,maxY,minZ,maxZ,sx,sy,sz }
+    var _wallmask = null;    // Uint8Array[GRID^2] — XZ 2D 壁マスク (1=壁/不通、0=通れる)
+                             // .hmap.json に保存される（_voxels が無い読み込み時の壁判定用）
 
     // ---- splat-transform SVO (Sparse Voxel Octree) ----
     var _svo     = null;   // { nodes: Uint32Array, leafData: Uint32Array, meta: Object }
@@ -180,7 +182,8 @@ window.Collider = (function () {
                     }
                 }
             }
-        } else if (_voxels && _bounds) {
+        } else if ((_voxels || _wallmask) && _bounds) {
+            // _voxels (生成直後の3D solid) があればそれを優先、無ければ _wallmask (.hmap.json から)
             var b        = _bounds;
             var voxelW   = b.sx / (GRID - 1);
             var voxelD   = b.sz / (GRID - 1);
@@ -193,7 +196,10 @@ window.Collider = (function () {
                 for (var dvz2 = -searchR2; dvz2 <= searchR2; dvz2++) {
                     var vx2 = cvx2 + dvx2, vz2 = cvz2 + dvz2;
                     if (vx2 < 0 || vz2 < 0 || vx2 >= GRID || vz2 >= GRID) continue;
-                    if (!_voxels[vi(vx2, cvy2, vz2)]) continue;
+                    var blocked = _voxels
+                        ? !!_voxels[vi(vx2, cvy2, vz2)]
+                        : !!_wallmask[vx2 + vz2 * GRID];
+                    if (!blocked) continue;
                     var vMinX2 = b.minX + vx2 * voxelW;
                     var vMinZ2 = b.minZ + vz2 * voxelD;
                     var nearX2 = Math.max(vMinX2, Math.min(wx, vMinX2 + voxelW));
@@ -379,11 +385,12 @@ window.Collider = (function () {
          */
         loadHmapJSON: function (data, onDone) {
             if (_svo) { if (onDone) onDone(null); return; }  // SVO 優先
-            _ready  = false;
-            _voxels = null;
+            _ready    = false;
+            _voxels   = null;
+            _wallmask = null;
             try {
                 if (!data || !data.bounds || !data.hmap) throw new Error('不正なフォーマット');
-                _bounds  = data.bounds;
+                _bounds = data.bounds;
                 // JSON シリアライズで NaN → null になっているので NaN に戻す
                 function toFloatArrayWithNaN(src) {
                     var arr = new Float32Array(src.length);
@@ -393,9 +400,14 @@ window.Collider = (function () {
                     return arr;
                 }
                 _hmap    = toFloatArrayWithNaN(data.hmap);
-                _ceilmap = data.ceilmap ? toFloatArrayWithNaN(data.ceilmap) : null;
+                _ceilmap = data.ceilmap  ? toFloatArrayWithNaN(data.ceilmap) : null;
+                _wallmask = data.wallmask ? new Uint8Array(data.wallmask) : null;
                 _ready   = true;
-                console.log('[Collider] hmap 読み込み完了 — grid:', data.grid);
+                console.log(
+                    '[Collider] hmap 読み込み完了 — grid:', data.grid,
+                    'format:', data.format || 'v1',
+                    'wallmask:', _wallmask ? 'あり' : 'なし'
+                );
                 if (onDone) onDone(null);
             } catch (e) {
                 if (onDone) onDone(e);
@@ -411,7 +423,7 @@ window.Collider = (function () {
             if (!_ready || !_bounds || !_hmap) return null;
             var b = _bounds;
             return {
-                format: 'vr-naiken-hmap-v1',
+                format: 'vr-naiken-hmap-v2',   // v2: wallmask 追加
                 grid:   GRID,
                 bounds: {
                     minX: b.minX, maxX: b.maxX,
@@ -419,8 +431,9 @@ window.Collider = (function () {
                     minZ: b.minZ, maxZ: b.maxZ,
                     sx:   b.sx,   sy:   b.sy,   sz:   b.sz
                 },
-                hmap:    Array.from(_hmap),
-                ceilmap: _ceilmap ? Array.from(_ceilmap) : null,
+                hmap:     Array.from(_hmap),
+                ceilmap:  _ceilmap  ? Array.from(_ceilmap)  : null,
+                wallmask: _wallmask ? Array.from(_wallmask) : null,
             };
         },
 
@@ -775,11 +788,40 @@ window.Collider = (function () {
                     hmapVZ = end;
                     if (hmapVZ < GRID) {
                         if (onProgress) onProgress(
-                            80 + Math.round(hmapVZ / GRID * 20),
+                            80 + Math.round(hmapVZ / GRID * 15),
                             '床・天井マップを構築中...'
                         );
                         setTimeout(hmapStep, 0);
                         return;
+                    }
+
+                    // Phase 6: XZ 壁マスクを構築（.hmap.json に保存する用）
+                    // 床から +PERSON_LO 〜 +PERSON_HI の間に solid voxel があれば「壁」
+                    // 床未検出 (NaN) は外側エリアと見なして壁扱い
+                    var PERSON_LO = 0.3;   // 床から下端 (m)
+                    var PERSON_HI = 1.6;   // 床から上端 (m)
+                    var b2 = _bounds;
+                    _wallmask = new Uint8Array(GRID2);
+                    var voxelH = b2.sy / GRID;
+                    var loDV = Math.max(1, Math.round(PERSON_LO / voxelH));
+                    var hiDV = Math.max(loDV, Math.round(PERSON_HI / voxelH));
+                    for (var vz3 = 0; vz3 < GRID; vz3++) {
+                        for (var vx3 = 0; vx3 < GRID; vx3++) {
+                            var fy = _hmap[vx3 + vz3 * GRID];
+                            if (isNaN(fy)) {
+                                _wallmask[vx3 + vz3 * GRID] = 1;
+                                continue;
+                            }
+                            var floorVY = Math.floor((fy - b2.minY) / b2.sy * GRID);
+                            var lo = Math.min(GRID - 1, floorVY + loDV);
+                            var hi = Math.min(GRID - 1, floorVY + hiDV);
+                            for (var vy3 = lo; vy3 <= hi; vy3++) {
+                                if (_voxels[vi(vx3, vy3, vz3)]) {
+                                    _wallmask[vx3 + vz3 * GRID] = 1;
+                                    break;
+                                }
+                            }
+                        }
                     }
 
                     // 全フェーズ完了
@@ -858,12 +900,13 @@ window.Collider = (function () {
         },
 
         reset: function () {
-            _ready   = false;
-            _voxels  = null;
-            _hmap    = null;
-            _ceilmap = null;
-            _bounds  = null;
-            _svo     = null;
+            _ready    = false;
+            _voxels   = null;
+            _hmap     = null;
+            _ceilmap  = null;
+            _wallmask = null;
+            _bounds   = null;
+            _svo      = null;
         },
     };
 }());
