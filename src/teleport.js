@@ -11,18 +11,70 @@ window.Teleporter = (function () {
     var _activePoint = null;
     var _onActivate  = null;
 
+    // 透過リング模様のテクスチャを 1度だけ生成して使い回す
+    var _ringTexture = null;
+    function getRingTexture() {
+        if (_ringTexture) return _ringTexture;
+        var size = 256;
+        var canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        var ctx = canvas.getContext('2d');
+        var cx = size / 2, cy = size / 2;
+        var ringOuter = size * 0.48;   // リング外半径
+        var ringInner = size * 0.34;   // リング内半径
+        var img  = ctx.createImageData(size, size);
+        var data = img.data;
+        for (var y = 0; y < size; y++) {
+            for (var x = 0; x < size; x++) {
+                var dx = x - cx, dy = y - cy;
+                var r  = Math.sqrt(dx * dx + dy * dy);
+                var a  = 0;
+                if (r < ringOuter && r > ringInner) {
+                    // リング本体: 端で滑らかに alpha 0 へフォール
+                    var mid  = (ringOuter + ringInner) * 0.5;
+                    var half = (ringOuter - ringInner) * 0.5;
+                    a = 1 - Math.abs(r - mid) / half;
+                    a = Math.pow(a, 0.6);
+                }
+                var idx = (y * size + x) * 4;
+                data[idx]     = 255;
+                data[idx + 1] = 255;
+                data[idx + 2] = 255;
+                data[idx + 3] = Math.round(a * 255);
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+
+        _ringTexture = new pc.Texture(_app.graphicsDevice, {
+            width:  size, height: size,
+            format: pc.PIXELFORMAT_R8_G8_B8_A8,
+            mipmaps: true,
+        });
+        _ringTexture.setSource(canvas);
+        _ringTexture.minFilter = pc.FILTER_LINEAR_MIPMAP_LINEAR;
+        _ringTexture.magFilter = pc.FILTER_LINEAR;
+        _ringTexture.addressU  = pc.ADDRESS_CLAMP_TO_EDGE;
+        _ringTexture.addressV  = pc.ADDRESS_CLAMP_TO_EDGE;
+        return _ringTexture;
+    }
+
     function createDisc(pos) {
         var entity = new pc.Entity('teleport-disc');
         entity.addComponent('render', { type: 'plane' });
 
         var mat = new pc.StandardMaterial();
-        mat.emissive          = new pc.Color(0, 0.83, 0.67);
-        mat.emissiveIntensity = 2;
-        mat.blendType         = pc.BLEND_ADDITIVE;
+        var color = new pc.Color(0.1, 0.95, 0.78);
+        mat.emissive          = color;
+        mat.emissiveIntensity = 1.0;
+        mat.emissiveMap       = getRingTexture();   // 中央透明・周囲リング
+        mat.opacityMap        = getRingTexture();   // 同じテクスチャの alpha を使う
+        mat.opacity           = 0.85;
+        mat.blendType         = pc.BLEND_NORMAL;    // additive 廃止（白飛び防止）
         mat.depthWrite        = false;
+        mat.cull              = pc.CULLFACE_NONE;   // 表裏どちらからも見える
         mat.update();
         entity.render.meshInstances[0].material = mat;
-        entity.setLocalScale(1.2, 1, 1.2);
+        entity.setLocalScale(0.7, 1, 0.7);          // 直径 0.7m
         entity.setLocalPosition(
             pos.x,
             (pos.y !== undefined ? pos.y : 0) + 0.03,
@@ -50,12 +102,12 @@ window.Teleporter = (function () {
         update: function (camPos) {
             if (!_points.length) return;
 
-            // パルスアニメーション
+            // パルスアニメーション（控えめに）
             var pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.003);
             _discs.forEach(function (d, i) {
-                d.mat.emissiveIntensity = 1.5 + pulse * 2;
+                d.mat.emissiveIntensity = 0.7 + pulse * 0.6;   // 0.7 〜 1.3
                 d.mat.update();
-                var s = 1.1 + pulse * 0.1;
+                var s = 0.7 + pulse * 0.08;                    // 0.7 〜 0.78m
                 _discs[i].entity.setLocalScale(s, 1, s);
             });
 
