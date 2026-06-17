@@ -17,6 +17,11 @@
     var cameraEntity = null;
     var _pendingTeleportCamera = null;
 
+    // companion file (.hmap.json / .voxel.json/.bin) 用のセッション内キャッシュバスタ。
+    // GCS の CDN エッジが max-age=3600 でグローバルに hmap/voxel を保持するため、
+    // ページロードごとにユニークなクエリを付けて新版を確実に取得する。
+    var _companionCB = Date.now();
+
     // 管理者ページから参照: 現在読み込まれているシーンの保存先 JSON ファイル名
     window._adminCurrentJSONName = null;
 
@@ -359,7 +364,9 @@
     function _tryLoadCompanionHmap(url) {
         if (!url || !window.Collider) return;
         var base    = url.split('?')[0].replace(/\.(ply|splat)$/i, '');
-        var hmapUrl = base + '.hmap.json';
+        // GCS の CDN エッジが古い版を保持するのでキャッシュバスト
+        // セッション内では同じバスタを使うので無駄なfetchは増えない
+        var hmapUrl = base + '.hmap.json?cb=' + _companionCB;
 
         fetch(hmapUrl, { method: 'HEAD' })
             .then(function (r) {
@@ -385,8 +392,8 @@
     function _tryLoadCompanionVoxel(url) {
         if (!url || !window.Collider) return;
         var base    = url.split('?')[0].replace(/\.(ply|splat)$/i, '');
-        var jsonUrl = base + '.voxel.json';
-        var binUrl  = base + '.voxel.bin';
+        var jsonUrl = base + '.voxel.json?cb=' + _companionCB;
+        var binUrl  = base + '.voxel.bin?cb=' + _companionCB;
 
         // HEAD リクエストで存在確認してから本読み込み
         fetch(jsonUrl, { method: 'HEAD' })
