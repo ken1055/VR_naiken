@@ -178,7 +178,7 @@ window.CameraController = (function () {
 
   // ---- キーボードイベント ----
   var GAME_CODES = {
-    KeyW:1, KeyA:1, KeyS:1, KeyD:1, KeyE:1, KeyQ:1, KeyF:1,
+    KeyW:1, KeyA:1, KeyS:1, KeyD:1, KeyE:1, KeyQ:1,
     ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1
   };
 
@@ -197,14 +197,6 @@ window.CameraController = (function () {
     if (isInputFocused()) return;
 
     _keys[e.code] = true;
-
-    // F キー: 原点リセット（即時テレポート）
-    if (e.code === 'KeyF') {
-      _targetPos.set(0, 2, 5);  _pos.set(0, 2, 5);
-      _targetYaw   = 0;         _yaw   = 0;
-      _targetPitch = 0;         _pitch = 0;
-      _orbitTarget.set(0, 0, 0);
-    }
 
     // ゲームキーのブラウザデフォルト動作を抑制
     if (GAME_CODES[e.code]) e.preventDefault();

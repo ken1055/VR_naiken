@@ -244,7 +244,6 @@ window.UI = (function () {
                 '<tr><td>Q</td><td>上昇</td></tr>',
                 '<tr><td>E</td><td>下降</td></tr>',
                 '<tr><td>ホイール</td><td>移動速度変更</td></tr>',
-                '<tr><td>F</td><td>原点リセット</td></tr>',
             ];
             _elHelpOverlay = el('div', { id: 'vr-help-overlay',
                 innerHTML: '<table>' + _helpRows.join('') + '</table>' });
