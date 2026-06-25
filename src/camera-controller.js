@@ -43,6 +43,10 @@ window.CameraController = (function () {
   // モバイル上下移動ボタン (-1 / 0 / 1)
   var _mobileVertical = 0;
 
+  // パノラマモード: 位置を完全に固定し、回転入力のみ受け付ける
+  var _lockPosition = false;
+  var _lockedPos    = new pc.Vec3(0, 1.6, 0);
+
   // バーチャルジョイスティック入力 (-1〜1)
   var _joystickX = 0;  // 右(+) / 左(-)
   var _joystickY = 0;  // 下(+) / 上(-) ← 画面座標なので前進は -Y
@@ -326,6 +330,17 @@ window.CameraController = (function () {
       var right = getRight();
       var spd   = _moveSpeed * dt;
 
+      // パノラマモード: 位置を固定したまま回転だけ反映する
+      if (_lockPosition) {
+        _targetPos.copy(_lockedPos);
+        _pos.copy(_lockedPos);
+        var tRotLk = 1 - Math.exp(-SMOOTH_ROT * dt);
+        _yaw   += (_targetYaw   - _yaw)   * tRotLk;
+        _pitch += (_targetPitch - _pitch) * tRotLk;
+        applyTransform();
+        return;
+      }
+
       // キー入力 → ターゲット位置を更新
       if (_keys['KeyW'] || _keys['ArrowUp'])    { _targetPos.add(fwd.clone().scale(spd)); }
       if (_keys['KeyS'] || _keys['ArrowDown'])   { _targetPos.add(fwd.clone().scale(-spd)); }
@@ -416,6 +431,22 @@ window.CameraController = (function () {
       _targetYaw   = yaw   || 0; _yaw   = yaw   || 0;
       _targetPitch = pitch || 0; _pitch = pitch || 0;
       applyTransform();
+    },
+
+    /**
+     * パノラマモード: 位置を center に固定し、回転入力だけ受け付ける
+     * lock=false で通常モードに戻す
+     * @param {boolean} lock
+     * @param {{x:number,y:number,z:number}} [center]
+     */
+    setLockPosition: function (lock, center) {
+      _lockPosition = !!lock;
+      if (lock) {
+        var c = center || { x: 0, y: 1.6, z: 0 };
+        _lockedPos.set(c.x, c.y, c.z);
+        _targetPos.copy(_lockedPos);
+        _pos.copy(_lockedPos);
+      }
     }
   };
 }());

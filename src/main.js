@@ -17,6 +17,23 @@
     var cameraEntity = null;
     var _pendingTeleportCamera = null;
 
+    // 現在ロード中のシーンURL (戻り先決定用)
+    var _currentSceneURL  = null;
+    // 360度画像表示中フラグ
+    var _isCurrentlyPano  = false;
+    // 360度画像に飛ぶ前のシーン状態 (戻るボタン用)
+    var _returnContext    = null;
+
+    // 拡張子で 360度画像か判定する
+    function _isPanoURL(url) {
+        if (!url) return false;
+        var clean = url.split('?')[0].toLowerCase();
+        return /\.(jpg|jpeg|png)$/.test(clean);
+    }
+    function _isPanoFile(file) {
+        return file && /\.(jpg|jpeg|png)$/i.test(file.name);
+    }
+
     // companion file (.hmap.json / .voxel.json/.bin) 用のセッション内キャッシュバスタ。
     // GCS の CDN エッジが max-age=3600 でグローバルに hmap/voxel を保持するため、
     // ページロードごとにユニークなクエリを付けて新版を確実に取得する。
@@ -28,6 +45,10 @@
     // ---- UI を最初に起動（PlayCanvas 失敗でも表示される）----
     UI.init(null, {
         onFileLoaded: function (file) {
+            if (_isPanoFile(file)) {
+                _loadPanoFromFile(file);
+                return;
+            }
             loadAndRender(GSplatLoader.loadFromFile(app, file, function (pct) {
                 UI.showLoading('読み込み中... ' + pct + '%');
             }), false);
@@ -100,6 +121,9 @@
             if (cameraEntity) Teleporter.update(cameraEntity.getPosition());
         });
 
+        // 360度パノラマレンダラ初期化
+        if (window.PanoRenderer) PanoRenderer.init(app);
+
         // UI に app を渡して再コールバック登録
         _rebindCallbacks();
 
@@ -107,11 +131,13 @@
         window._vrLoad = {
             fromURL: _loadFromURL,
             fromFile: function (file) {
+                if (_isPanoFile(file)) { _loadPanoFromFile(file); return; }
                 loadAndRender(GSplatLoader.loadFromFile(app, file, function (pct) {
                     UI.showLoading('読み込み中... ' + pct + '%');
                 }), false);
             },
             fromFolder: loadFolderAndRender,
+            isPano:     function () { return _isCurrentlyPano; },
         };
 
         // ?url= パラメータから自動ロード
@@ -163,7 +189,9 @@
         // （別物件のフォルダに誤って保存しないため）
         if (window._adminClearFolderHandle) window._adminClearFolderHandle();
         var clean = url.split('?')[0];
-        if (clean.endsWith('/') || !/\.(ply|splat)$/i.test(clean)) {
+        if (_isPanoURL(url)) {
+            _loadPanoFromURL(url);
+        } else if (clean.endsWith('/') || !/\.(ply|splat)$/i.test(clean)) {
             _loadFromFolderURL(url);
         } else {
             loadAndRender(GSplatLoader.loadFromURL(app, url, function (pct) {
@@ -226,9 +254,12 @@
         }
         UI.showLoading('読み込み中...');
         promise.then(function (asset) {
+            // パノラマモードの解除 (3DGSロード時は必ず通常モードに戻す)
+            _exitPanoMode();
             Teleporter.reset();
             GSplatRenderer.disposeAll();
             GSplatRenderer.create(app, asset);
+            _currentSceneURL = sourceURL || null;
             if (sourceURL) {
                 _applyCompanionJSON(sourceURL);  // handles fade + pending camera
                 _tryLoadCompanionVoxel(sourceURL);
@@ -249,19 +280,156 @@
         });
     }
 
+    // ---- 360度画像ロード → レンダリング (URL) ----
+    function _loadPanoFromURL(url) {
+        if (!app || !window.PanoRenderer) {
+            UI.showError('PanoRenderer が利用できません');
+            return;
+        }
+        // 通常シーン → パノラマ への遷移時に戻り先を記憶
+        if (_currentSceneURL && !_isCurrentlyPano) {
+            _returnContext = {
+                url: _currentSceneURL,
+                camera: window.CameraController ? CameraController.getState() : null
+            };
+        }
+        UI.showLoading('360度画像を読み込み中...');
+        PanoRenderer.loadFromURL(app, url)
+            .then(function (asset) { _renderPano(asset, url); })
+            .catch(function (err) {
+                UI.hideLoading();
+                UI.hideFade();
+                UI.showError(err.message || String(err));
+            });
+    }
+
+    // ---- 360度画像ロード → レンダリング (File) ----
+    function _loadPanoFromFile(file) {
+        if (!app || !window.PanoRenderer) {
+            UI.showError('PanoRenderer が利用できません');
+            return;
+        }
+        UI.showLoading('360度画像を読み込み中...');
+        PanoRenderer.loadFromFile(app, file)
+            .then(function (asset) { _renderPano(asset, null, file.name); })
+            .catch(function (err) {
+                UI.hideLoading();
+                UI.showError(err.message || String(err));
+            });
+    }
+
+    // ---- 360度画像表示 (共通) ----
+    function _renderPano(asset, sourceURL, fileName) {
+        Teleporter.reset();
+        GSplatRenderer.disposeAll();
+        PanoRenderer.create(app, asset, { yaw: 0 });
+        _enterPanoMode();
+        _currentSceneURL = sourceURL || null;
+        _updateAdminCurrentJSON(fileName || (sourceURL ? sourceURL.split('/').pop() : 'panorama'), sourceURL);
+
+        if (sourceURL) {
+            // コンパニオン JSON 内で initialView と pending teleport の適用を行う
+            _applyPanoCompanionJSON(sourceURL);
+        } else {
+            if (window._adminSetInitialCamera) window._adminSetInitialCamera(null);
+            if (window._adminSetTeleports)     window._adminSetTeleports([]);
+            _applyPendingTeleportState();
+        }
+        UI.hideLoading();
+        UI.hideEmptyState();
+    }
+
+    // ---- パノラマモードに入る (カメラ固定・移動UI非表示・戻るボタン表示) ----
+    function _enterPanoMode() {
+        _isCurrentlyPano = true;
+        if (window.CameraController) {
+            var c = PanoRenderer.getCenter();
+            CameraController.setLockPosition(true, c);
+        }
+        if (window.UI) {
+            UI.setPanoMode(true);
+            if (_returnContext) {
+                UI.setBackButton(function () {
+                    var ctx = _returnContext;
+                    _returnContext = null;
+                    UI.showFade();
+                    if (ctx.camera) _pendingTeleportCamera = ctx.camera;
+                    setTimeout(function () { _loadFromURL(ctx.url); }, 400);
+                }, '元の部屋に戻る');
+            } else {
+                UI.setBackButton(null);
+            }
+        }
+    }
+
+    // ---- パノラマモードを抜ける (通常3DGS表示に戻る前処理) ----
+    function _exitPanoMode() {
+        _isCurrentlyPano = false;
+        if (window.PanoRenderer) PanoRenderer.dispose();
+        if (window.CameraController) CameraController.setLockPosition(false);
+        if (window.UI) {
+            UI.setPanoMode(false);
+            UI.setBackButton(null);
+        }
+    }
+
+    // ---- パノラマ用コンパニオン JSON 適用 ----
+    // JSON 形式: { "initialView": { "yaw": 0, "pitch": 0 }, "teleports": [...] }
+    function _applyPanoCompanionJSON(url) {
+        var base    = url.split('?')[0];
+        var jsonURL = base.replace(/\.(jpg|jpeg|png)$/i, '.json');
+        if (jsonURL === base) {
+            if (window._adminSetInitialCamera) window._adminSetInitialCamera(null);
+            if (window._adminSetTeleports)     window._adminSetTeleports([]);
+            _applyPendingTeleportState();
+            return;
+        }
+
+        fetch(jsonURL, { cache: 'no-store' })
+            .then(function (res) { return res.ok ? res.json() : null; })
+            .then(function (config) {
+                var initialView = (config && config.initialView) || null;
+                var teleports   = (config && config.teleports)   || [];
+                if (initialView && window.CameraController) {
+                    var yaw   = initialView.yaw   || 0;
+                    var pitch = initialView.pitch || 0;
+                    var c = PanoRenderer.getCenter();
+                    CameraController.teleport(c.x, c.y, c.z, yaw, pitch);
+                }
+                if (teleports.length) Teleporter.load(teleports, _onTeleport);
+                if (window._adminSetInitialCamera) window._adminSetInitialCamera(initialView);
+                if (window._adminSetTeleports)     window._adminSetTeleports(teleports);
+                _applyPendingTeleportState();
+            })
+            .catch(function () {
+                if (window._adminSetInitialCamera) window._adminSetInitialCamera(null);
+                if (window._adminSetTeleports)     window._adminSetTeleports([]);
+                _applyPendingTeleportState();
+            });
+    }
+
     // ---- フォルダ一括読み込み → レンダリング ----
-    // フォルダ内の PLY/splat + コンパニオンファイルをまとめて読み込む
+    // フォルダ内の PLY/splat (または 360度画像) + コンパニオンファイルをまとめて読み込む
     function loadFolderAndRender(files) {
         if (!app) { UI.showError('PlayCanvas が初期化されていません'); return; }
 
         var fileArr = Array.from(files);
+
+        // 360度画像が含まれていればそれを優先
+        var panoFile = fileArr.find(function (f) {
+            return /\.(jpg|jpeg|png)$/i.test(f.name);
+        });
+        if (panoFile) {
+            _loadPanoFolder(fileArr, panoFile);
+            return;
+        }
 
         // PLY / splat ファイルを探す
         var plyFile = fileArr.find(function (f) {
             return /\.(ply|splat)$/i.test(f.name);
         });
         if (!plyFile) {
-            UI.showError('.ply または .splat ファイルがフォルダ内に見つかりません');
+            UI.showError('.ply / .splat / .jpg ファイルがフォルダ内に見つかりません');
             return;
         }
 
@@ -354,10 +522,58 @@
         });
     }
 
+    // ---- フォルダから 360度画像 + コンパニオン JSON を読み込む ----
+    function _loadPanoFolder(fileArr, panoFile) {
+        var base     = panoFile.name.replace(/\.(jpg|jpeg|png)$/i, '');
+        var jsonFile = fileArr.find(function (f) { return f.name === base + '.json'; });
+
+        UI.showLoading('360度画像を読み込み中...');
+        PanoRenderer.loadFromFile(app, panoFile).then(function (asset) {
+            Teleporter.reset();
+            GSplatRenderer.disposeAll();
+            PanoRenderer.create(app, asset, { yaw: 0 });
+            _enterPanoMode();
+            _currentSceneURL = null;  // ローカルファイルなのでURL紐付けなし
+            _updateAdminCurrentJSON(panoFile.name, null);
+
+            if (jsonFile) {
+                var jr = new FileReader();
+                jr.readAsText(jsonFile);
+                jr.onload = function () {
+                    var initialView = null, teleports = [];
+                    try {
+                        var config = JSON.parse(jr.result);
+                        if (config) {
+                            initialView = config.initialView || null;
+                            teleports   = config.teleports   || [];
+                        }
+                    } catch (e) {}
+                    if (initialView && window.CameraController) {
+                        var c = PanoRenderer.getCenter();
+                        CameraController.teleport(c.x, c.y, c.z, initialView.yaw || 0, initialView.pitch || 0);
+                    }
+                    if (teleports.length) Teleporter.load(teleports, _onTeleport);
+                    if (window._adminSetInitialCamera) window._adminSetInitialCamera(initialView);
+                    if (window._adminSetTeleports)     window._adminSetTeleports(teleports);
+                    _applyPendingTeleportState();
+                };
+            } else {
+                if (window._adminSetInitialCamera) window._adminSetInitialCamera(null);
+                if (window._adminSetTeleports)     window._adminSetTeleports([]);
+                _applyPendingTeleportState();
+            }
+            UI.hideLoading();
+            UI.hideEmptyState();
+        }).catch(function (err) {
+            UI.hideLoading();
+            UI.showError(err.message || String(err));
+        });
+    }
+
     // ---- 管理者用: 現在のシーンに対応する JSON ファイル名を更新 ----
     function _updateAdminCurrentJSON(assetName, sourceURL) {
         var base = (sourceURL ? sourceURL.split('?')[0].split('/').pop() : assetName) || 'scene';
-        window._adminCurrentJSONName = base.replace(/\.(ply|splat|lcc)$/i, '.json');
+        window._adminCurrentJSONName = base.replace(/\.(ply|splat|lcc|jpg|jpeg|png)$/i, '.json');
     }
 
     // ---- 管理者ツール生成の .hmap.json を自動検出 ----

@@ -168,6 +168,25 @@ window.UI = (function () {
         '  position: fixed; inset: 0; z-index: 250; background: #000;',
         '  opacity: 0; pointer-events: none; transition: opacity 0.4s; }',
         '#vr-fade-overlay.active { opacity: 1; pointer-events: all; }',
+
+        /* 360度モード用「元の部屋に戻る」ボタン */
+        '#vr-back-btn {',
+        '  position: fixed; top: 20px; left: 20px; z-index: 130;',
+        '  padding: 10px 20px; border-radius: 99px;',
+        '  background: rgba(0,4,12,0.92);',
+        '  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);',
+        '  border: 1.5px solid rgba(0,212,170,0.45);',
+        '  color: #00D4AA; font-size: 13px; font-weight: 700;',
+        '  cursor: pointer; font-family: system-ui, sans-serif; transition: all 0.15s;',
+        '  display: flex; align-items: center; gap: 6px; }',
+        '#vr-back-btn:hover {',
+        '  background: rgba(0,212,170,0.18); border-color: rgba(0,212,170,0.75); }',
+        '#vr-back-btn.hidden { display: none; }',
+
+        /* パノラマモード中は移動UIを隠す */
+        'body.pano-mode #vr-joystick-base,',
+        'body.pano-mode #vr-move-btns,',
+        'body.pano-mode #vr-help-overlay { display: none !important; }',
     ].join('\n');
 
     var _elLoading     = null;
@@ -181,6 +200,8 @@ window.UI = (function () {
     var _elTeleportBtn    = null;
     var _elFadeOverlay    = null;
     var _teleportClick    = null;
+    var _elBackBtn        = null;
+    var _backClick        = null;
     var _callbacks        = {};
 
     function el(tag, attrs, children) {
@@ -351,6 +372,14 @@ window.UI = (function () {
             _elFadeOverlay = el('div', { id: 'vr-fade-overlay' });
             root.appendChild(_elFadeOverlay);
 
+            // 「元の部屋に戻る」ボタン (360度画像表示時のみ可視化)
+            _elBackBtn = el('button', { id: 'vr-back-btn', className: 'hidden',
+                innerHTML: '<span style="font-size:15px;line-height:1;">←</span> 元の部屋に戻る' });
+            _elBackBtn.addEventListener('click', function () {
+                if (_backClick) _backClick();
+            });
+            root.appendChild(_elBackBtn);
+
             showHelp();
         },
 
@@ -411,6 +440,33 @@ window.UI = (function () {
         showHelp:         function ()    { showHelp(); },
         showTooltip:      function (msg) { this.showInfo(msg); },
         updateCallbacks:  function (cb)  { Object.assign(_callbacks, cb); },
+
+        /**
+         * 360度モード ON/OFF。ON のときは移動UIを隠す。
+         */
+        setPanoMode: function (on) {
+            if (on) document.body.classList.add('pano-mode');
+            else    document.body.classList.remove('pano-mode');
+        },
+
+        /**
+         * 「元の部屋に戻る」ボタンの表示制御
+         * @param {Function|null} onClick  null で非表示
+         * @param {string}        [label]  ボタン文言を上書き
+         */
+        setBackButton: function (onClick, label) {
+            if (!_elBackBtn) return;
+            if (!onClick) {
+                _elBackBtn.classList.add('hidden');
+                _backClick = null;
+                return;
+            }
+            if (label) {
+                _elBackBtn.innerHTML = '<span style="font-size:15px;line-height:1;">←</span> ' + label;
+            }
+            _backClick = onClick;
+            _elBackBtn.classList.remove('hidden');
+        },
 
         // 以下はプロダクション版では非表示（互換性のためスタブとして残す）
         setTitle:         function () {},
