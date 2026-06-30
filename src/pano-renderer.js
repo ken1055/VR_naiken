@@ -1,62 +1,19 @@
 /**
  * pano-renderer.js — 360度 (Equirectangular) 画像表示モジュール
  *
- * 高分割の内向きスフィア + StandardMaterial (emissiveMap) で実装。
- * カスタムシェーダー方式は PlayCanvas v2.x の Material API と整合せずエラーが
- * 出るため、安定して動く標準マテリアル + 細かい UV メッシュで歪みを抑える。
+ * PlayCanvas v2.x のプリミティブ sphere + StandardMaterial で実装。
+ * カスタムメッシュ / カスタムシェーダー方式はエンジンの内部 API と整合せず
+ * 'impl' / 'failed' プロパティの undefined エラーになるため、標準コンポーネント
+ * に統一する。
+ *
+ * プリミティブ sphere の分割は粗いため equirectangular の極付近で歪みが出る。
+ * 完全なピクセル単位投影は将来 ShaderMaterial 等での再実装を検討。
  */
 window.PanoRenderer = (function () {
     'use strict';
 
-    var _app        = null;
-    var _entity     = null;
-    var _sharedMesh = null;   // 高分割スフィア (LAT 128 × LON 256)
-
-    // 内向き高分割スフィアメッシュ。equirectangular の UV を頂点で持つ。
-    // 鏡像対策のため U.x を反転 (1-u)、V は北極=0 / 南極=1 に合わせる。
-    function _buildInvertedSphere(device) {
-        var LAT = 128, LON = 256;
-        var positions = [];
-        var normals   = [];
-        var uvs       = [];
-        var indices   = [];
-
-        for (var lat = 0; lat <= LAT; lat++) {
-            var v   = lat / LAT;
-            var phi = (v - 0.5) * Math.PI;
-            var y   = Math.sin(phi);
-            var cp  = Math.cos(phi);
-            for (var lon = 0; lon <= LON; lon++) {
-                var u     = lon / LON;
-                var theta = u * Math.PI * 2;
-                var x = cp * Math.cos(theta);
-                var z = cp * Math.sin(theta);
-                positions.push(x, y, z);
-                normals.push(-x, -y, -z);
-                uvs.push(1 - u, 1 - v);
-            }
-        }
-
-        var stride = LON + 1;
-        for (var la = 0; la < LAT; la++) {
-            for (var lo = 0; lo < LON; lo++) {
-                var a = la * stride + lo;
-                var b = a + 1;
-                var c = a + stride;
-                var d = c + 1;
-                indices.push(a, c, b);
-                indices.push(b, c, d);
-            }
-        }
-
-        var mesh = new pc.Mesh(device);
-        mesh.setPositions(positions);
-        mesh.setNormals(normals);
-        mesh.setUvs(0, uvs);
-        mesh.setIndices(indices);
-        mesh.update(pc.PRIMITIVE_TRIANGLES);
-        return mesh;
-    }
+    var _app    = null;
+    var _entity = null;
 
     function _loadAsset(app, opts) {
         return new Promise(function (resolve, reject) {
@@ -119,35 +76,39 @@ window.PanoRenderer = (function () {
 
             this.dispose();
 
-            var device = app.graphicsDevice;
-            if (!_sharedMesh) _sharedMesh = _buildInvertedSphere(device);
-
             var entity = new pc.Entity('panorama-sphere');
             entity.tags.add('pano-renderer');
 
+            // PlayCanvas プリミティブ sphere を使う
+            entity.addComponent('render', { type: 'sphere' });
+
             var mat = new pc.StandardMaterial();
-            mat.diffuse        = new pc.Color(0, 0, 0);
-            mat.emissive       = new pc.Color(1, 1, 1);
-            mat.emissiveMap    = asset.resource;
-            mat.useLighting    = false;
+            mat.diffuse         = new pc.Color(0, 0, 0);
+            mat.emissive        = new pc.Color(1, 1, 1);
+            mat.emissiveMap     = asset.resource;
+            mat.useLighting     = false;
             mat.useGammaTonemap = false;
-            mat.cull           = pc.CULLFACE_BACK;  // 自前 winding に合わせる
-            mat.depthWrite     = false;
+            mat.cull            = pc.CULLFACE_FRONT;   // 内面のみ描画
+            mat.depthWrite      = false;
             mat.update();
 
-            var mi = new pc.MeshInstance(_sharedMesh, mat, entity);
-            entity.addComponent('render', { meshInstances: [mi] });
+            if (entity.render && entity.render.meshInstances) {
+                entity.render.meshInstances.forEach(function (mi) {
+                    mi.material = mat;
+                });
+            }
 
-            entity.setLocalScale(50, 50, 50);
+            // 半径 50 (プリミティブ sphere は直径1なので scale=100 で直径100=半径50)
+            entity.setLocalScale(100, 100, 100);
             entity.setLocalPosition(0, 1.6, 0);
 
-            // 初期向き (yaw) は entity 自体を回転させて反映
+            // 初期向き (yaw)
             entity.setLocalEulerAngles(0, options.yaw || 0, 0);
 
             app.root.addChild(entity);
             _entity = entity;
 
-            console.log('[PanoRenderer] 高分割スフィア (LAT 128 × LON 256) 起動');
+            console.log('[PanoRenderer] プリミティブ sphere 起動');
             return entity;
         },
 
