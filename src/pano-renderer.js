@@ -51,17 +51,20 @@ window.PanoRenderer = (function () {
     }
 
     // equirectangular サンプリング用のカスタムシェーダー
+    //
+    // 方向ベクトルとして「球のローカル座標 (= 球中心からの単位方向)」を直接使う。
+    // view_position からの差分方式だと、カメラ位置が球の中心から微妙にずれている
+    // (entity 階層の親変換ずれ等) と方向ベクトルが歪んで、結果壁が波打って見える。
+    // ローカル座標を方向にすれば、カメラ位置に関わらず常に正確な極座標マッピングが得られる。
     function _buildShader(device) {
         var vshader = [
             'attribute vec3 vertex_position;',
             'uniform mat4 matrix_model;',
             'uniform mat4 matrix_viewProjection;',
-            'uniform vec3 view_position;',
-            'varying vec3 vDir;',
+            'varying vec3 vLocal;',
             'void main(void) {',
-            '    vec4 worldPos = matrix_model * vec4(vertex_position, 1.0);',
-            '    vDir = worldPos.xyz - view_position;',
-            '    gl_Position = matrix_viewProjection * worldPos;',
+            '    vLocal = vertex_position;',
+            '    gl_Position = matrix_viewProjection * matrix_model * vec4(vertex_position, 1.0);',
             '}'
         ].join('\n');
 
@@ -69,16 +72,18 @@ window.PanoRenderer = (function () {
             'precision mediump float;',
             'uniform sampler2D uPano;',
             'uniform float uYawOffset;',     // 初期向き調整 (rad)
-            'varying vec3 vDir;',
+            'varying vec3 vLocal;',
             'const float PI    = 3.14159265359;',
             'const float TWO_PI = 6.28318530718;',
             'void main(void) {',
-            '    vec3 d = normalize(vDir);',
-            // U: 経度。-Z (カメラ正面) を画像中央に合わせるため +PI/2 のオフセット
-            //    内側から見たときに鏡像にならない方向で展開
-            '    float u = (atan(d.z, d.x) + uYawOffset) / TWO_PI;',
-            '    u = fract(u + 0.5);',
-            // V: 緯度。北極が V=0、南極が V=1
+            '    vec3 d = normalize(vLocal);',
+            // U: equirectangular の中央 (U=0.5) をカメラ正面 (-Z) に合わせる。
+            // atan(d.x, -d.z) で
+            //   d=(0,0,-1)[カメラ正面]→0, d=(+1,0,0)[画面右]→+π/2, d=(-1,0,0)[画面左]→-π/2
+            // これを TWO_PI で正規化し +0.5 して画像中央にシフト。
+            '    float u = (atan(d.x, -d.z) + uYawOffset) / TWO_PI + 0.5;',
+            '    u = fract(u);',
+            // V: 北極 (d.y=+1) を V=0、南極 (d.y=-1) を V=1 にマップ
             '    float v = 0.5 - asin(clamp(d.y, -1.0, 1.0)) / PI;',
             '    gl_FragColor = texture2D(uPano, vec2(u, v));',
             '}'
