@@ -1,256 +1,203 @@
 /**
  * pano-renderer.js — 360度 (Equirectangular) 画像表示モジュール
  *
- * 平面スクロール式ビューア。画像をHTMLオーバーレイで表示し、マウスドラッグや
- * ピンチで自由にスクロール/ズームできる。equirectangular の歪みは画像本来の
- * 見え方として残るが、3D球面投影による視差の歪みは発生しない。
- *
- * 既存の create / dispose / getCenter / loadFromURL / loadFromFile API は
- * シグネチャを維持。app / asset 引数は互換性のために受け取るだけ。
+ * 球メッシュ + フラグメントシェーダーで equirectangular 画像を歪み無しで表示する。
+ * 球のローカル座標を方向ベクトルとして直接 (atan, asin) で UV 化することで
+ * カメラ位置の微小ずれに依存しない perspective-correct な極座標マッピングを得る。
+ * Insta360 や Photo Sphere Viewer と同じ原理。
  */
 window.PanoRenderer = (function () {
     'use strict';
 
-    var _overlay = null;
-    var _img     = null;
-    var _state   = {
-        imgW: 0,    imgH: 0,
-        viewW: 0,   viewH: 0,
-        offsetX: 0, offsetY: 0,
-        scale: 1,   minScale: 1, maxScale: 1,
-        dragging: false,
-        lastX: 0,   lastY: 0,
-        pinchDist: 0
-    };
+    var _app          = null;
+    var _entity       = null;
+    var _sharedMesh   = null;
+    var _sharedShader = null;
 
-    function _apply() {
-        if (!_img) return;
-        _img.style.transform =
-            'translate3d(' + _state.offsetX + 'px,' + _state.offsetY + 'px,0)'
-            + ' scale(' + _state.scale + ')';
-    }
+    // 内向き球メッシュ (UV はシェーダーで計算)
+    function _buildSphereMesh(device) {
+        var LAT = 32, LON = 64;
+        var positions = [];
+        var indices   = [];
 
-    // 画像が画面からはみ出さないように位置をクランプする
-    function _clamp() {
-        var w = _state.imgW * _state.scale;
-        var h = _state.imgH * _state.scale;
-        if (h <= _state.viewH) {
-            _state.offsetY = (_state.viewH - h) / 2;
-        } else {
-            if (_state.offsetY > 0) _state.offsetY = 0;
-            if (_state.offsetY + h < _state.viewH) _state.offsetY = _state.viewH - h;
-        }
-        if (w <= _state.viewW) {
-            _state.offsetX = (_state.viewW - w) / 2;
-        } else {
-            if (_state.offsetX > 0) _state.offsetX = 0;
-            if (_state.offsetX + w < _state.viewW) _state.offsetX = _state.viewW - w;
-        }
-    }
-
-    function _recomputeScales() {
-        // 最小スケール: 画面の縦方向が画像の縦幅以下に収まる程度
-        var fitH = _state.viewH / _state.imgH;
-        var fitW = _state.viewW / _state.imgW;
-        _state.minScale = Math.min(fitH, fitW * 0.5);  // 引いて見られるようにする
-        _state.maxScale = Math.max(fitH, fitW) * 8;
-    }
-
-    function _onLoad() {
-        if (!_img || !_overlay) return;
-        _state.imgW  = _img.naturalWidth;
-        _state.imgH  = _img.naturalHeight;
-        _state.viewW = _overlay.clientWidth;
-        _state.viewH = _overlay.clientHeight;
-        _recomputeScales();
-        // 初期は画面の縦に合わせる (パノラマの上下が見切れない最大表示)
-        _state.scale   = _state.viewH / _state.imgH;
-        _state.offsetX = (_state.viewW - _state.imgW * _state.scale) / 2;
-        _state.offsetY = (_state.viewH - _state.imgH * _state.scale) / 2;
-        _clamp();
-        _apply();
-    }
-
-    function _zoomAt(mx, my, factor) {
-        var newScale = _state.scale * factor;
-        if (newScale < _state.minScale) newScale = _state.minScale;
-        if (newScale > _state.maxScale) newScale = _state.maxScale;
-        var k = newScale / _state.scale;
-        _state.offsetX = mx - (mx - _state.offsetX) * k;
-        _state.offsetY = my - (my - _state.offsetY) * k;
-        _state.scale = newScale;
-        _clamp();
-        _apply();
-    }
-
-    // ---- マウス ----
-    function _onMouseDown(e) {
-        _state.dragging = true;
-        _state.lastX    = e.clientX;
-        _state.lastY    = e.clientY;
-        _overlay.style.cursor = 'grabbing';
-        e.preventDefault();
-    }
-    function _onMouseMove(e) {
-        if (!_state.dragging || !_overlay) return;
-        _state.offsetX += e.clientX - _state.lastX;
-        _state.offsetY += e.clientY - _state.lastY;
-        _state.lastX = e.clientX;
-        _state.lastY = e.clientY;
-        _clamp();
-        _apply();
-    }
-    function _onMouseUp() {
-        if (!_state.dragging) return;
-        _state.dragging = false;
-        if (_overlay) _overlay.style.cursor = 'grab';
-    }
-    function _onWheel(e) {
-        e.preventDefault();
-        var rect = _overlay.getBoundingClientRect();
-        var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-        _zoomAt(e.clientX - rect.left, e.clientY - rect.top, factor);
-    }
-
-    // ---- タッチ ----
-    function _touchDist(t0, t1) {
-        var dx = t0.clientX - t1.clientX;
-        var dy = t0.clientY - t1.clientY;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-    function _onTouchStart(e) {
-        if (e.touches.length === 1) {
-            _state.dragging = true;
-            _state.lastX = e.touches[0].clientX;
-            _state.lastY = e.touches[0].clientY;
-        } else if (e.touches.length === 2) {
-            _state.dragging = false;
-            _state.pinchDist = _touchDist(e.touches[0], e.touches[1]);
-        }
-        e.preventDefault();
-    }
-    function _onTouchMove(e) {
-        if (e.touches.length === 1 && _state.dragging) {
-            _state.offsetX += e.touches[0].clientX - _state.lastX;
-            _state.offsetY += e.touches[0].clientY - _state.lastY;
-            _state.lastX = e.touches[0].clientX;
-            _state.lastY = e.touches[0].clientY;
-            _clamp();
-            _apply();
-        } else if (e.touches.length === 2) {
-            var d = _touchDist(e.touches[0], e.touches[1]);
-            if (_state.pinchDist > 0) {
-                var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-                var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-                var rect = _overlay.getBoundingClientRect();
-                _zoomAt(mx - rect.left, my - rect.top, d / _state.pinchDist);
+        for (var lat = 0; lat <= LAT; lat++) {
+            var phi = (lat / LAT - 0.5) * Math.PI;
+            var y   = Math.sin(phi);
+            var cp  = Math.cos(phi);
+            for (var lon = 0; lon <= LON; lon++) {
+                var theta = (lon / LON) * Math.PI * 2;
+                positions.push(cp * Math.cos(theta), y, cp * Math.sin(theta));
             }
-            _state.pinchDist = d;
         }
-        e.preventDefault();
-    }
-    function _onTouchEnd(e) {
-        if (e.touches.length < 2) _state.pinchDist = 0;
-        if (e.touches.length === 0) _state.dragging = false;
-    }
 
-    function _onResize() {
-        if (!_overlay || !_img) return;
-        _state.viewW = _overlay.clientWidth;
-        _state.viewH = _overlay.clientHeight;
-        _recomputeScales();
-        if (_state.scale < _state.minScale) _state.scale = _state.minScale;
-        _clamp();
-        _apply();
-    }
+        var stride = LON + 1;
+        for (var la = 0; la < LAT; la++) {
+            for (var lo = 0; lo < LON; lo++) {
+                var a = la * stride + lo;
+                var b = a + 1;
+                var c = a + stride;
+                var d = c + 1;
+                indices.push(a, c, b);
+                indices.push(b, c, d);
+            }
+        }
 
-    function _createOverlay() {
-        _overlay = document.createElement('div');
-        _overlay.id = 'pano-overlay';
-        _overlay.style.cssText = [
-            'position:fixed;', 'inset:0;', 'z-index:20;',
-            'background:#000;', 'overflow:hidden;',
-            'touch-action:none;', 'cursor:grab;', 'user-select:none;'
-        ].join('');
-
-        _img = document.createElement('img');
-        _img.style.cssText = [
-            'position:absolute;', 'top:0;', 'left:0;',
-            'transform-origin:0 0;',
-            'pointer-events:none;',
-            '-webkit-user-drag:none;',
-            'image-rendering:high-quality;'
-        ].join('');
-        _img.draggable = false;
-        _img.addEventListener('load', _onLoad);
-        _overlay.appendChild(_img);
-
-        document.body.appendChild(_overlay);
-
-        _overlay.addEventListener('mousedown',  _onMouseDown);
-        window.addEventListener('mousemove',    _onMouseMove);
-        window.addEventListener('mouseup',      _onMouseUp);
-        _overlay.addEventListener('wheel',      _onWheel,      { passive: false });
-        _overlay.addEventListener('touchstart', _onTouchStart, { passive: false });
-        _overlay.addEventListener('touchmove',  _onTouchMove,  { passive: false });
-        _overlay.addEventListener('touchend',   _onTouchEnd);
-        window.addEventListener('resize', _onResize);
+        var mesh = new pc.Mesh(device);
+        mesh.setPositions(positions);
+        mesh.setIndices(indices);
+        mesh.update(pc.PRIMITIVE_TRIANGLES);
+        return mesh;
     }
 
-    function _disposeOverlay() {
-        if (!_overlay) return;
-        window.removeEventListener('mousemove', _onMouseMove);
-        window.removeEventListener('mouseup',   _onMouseUp);
-        window.removeEventListener('resize',    _onResize);
-        if (_overlay.parentNode) _overlay.parentNode.removeChild(_overlay);
-        _overlay = null;
-        _img = null;
-        _state.dragging = false;
+    function _buildShader(device) {
+        var vshader = [
+            'attribute vec3 vertex_position;',
+            'uniform mat4 matrix_model;',
+            'uniform mat4 matrix_viewProjection;',
+            'varying vec3 vLocal;',
+            'void main(void) {',
+            '    vLocal = vertex_position;',
+            '    gl_Position = matrix_viewProjection * matrix_model * vec4(vertex_position, 1.0);',
+            '}'
+        ].join('\n');
+
+        var fshader = [
+            'precision highp float;',
+            'uniform sampler2D uPano;',
+            'uniform float uYawOffset;',
+            'varying vec3 vLocal;',
+            'const float PI    = 3.14159265359;',
+            'const float TWO_PI = 6.28318530718;',
+            'void main(void) {',
+            '    vec3 d = normalize(vLocal);',
+            '    float u = (atan(d.x, -d.z) + uYawOffset) / TWO_PI + 0.5;',
+            '    u = fract(u);',
+            '    float v = 0.5 - asin(clamp(d.y, -1.0, 1.0)) / PI;',
+            '    gl_FragColor = texture2D(uPano, vec2(u, v));',
+            '}'
+        ].join('\n');
+
+        var attributes = { vertex_position: pc.SEMANTIC_POSITION };
+        return pc.createShaderFromCode(device, vshader, fshader,
+            'pano-equirect', attributes);
     }
 
-    // 擬似 asset (loadFromURL/File → create の橋渡し)
-    function _makePseudoAsset(src, name) {
-        return { __pano: true, src: src, name: name || 'panorama' };
+    function _loadAsset(app, opts) {
+        return new Promise(function (resolve, reject) {
+            var name = opts.name || 'panorama';
+            var src  = opts.url;
+            var objectURL = null;
+            if (opts.file) {
+                objectURL = URL.createObjectURL(opts.file);
+                src = objectURL;
+            }
+            if (!src) { reject(new Error('画像のソースが指定されていません')); return; }
+
+            var asset = new pc.Asset(name, 'texture', { url: src, filename: name });
+
+            asset.ready(function (loadedAsset) {
+                var tex = loadedAsset.resource;
+                if (tex) {
+                    tex.addressU   = pc.ADDRESS_REPEAT;
+                    tex.addressV   = pc.ADDRESS_CLAMP_TO_EDGE;
+                    tex.minFilter  = pc.FILTER_LINEAR_MIPMAP_LINEAR;
+                    tex.magFilter  = pc.FILTER_LINEAR;
+                    tex.anisotropy = 16;
+                }
+                if (objectURL) URL.revokeObjectURL(objectURL);
+                resolve(loadedAsset);
+            });
+            asset.on('error', function (err) {
+                if (objectURL) URL.revokeObjectURL(objectURL);
+                reject(new Error('360度画像の読み込みに失敗しました: '
+                    + (err ? String(err) : 'Unknown error')));
+            });
+            app.assets.add(asset);
+            app.assets.load(asset);
+        });
+    }
+
+    function _isPanoEntity(entity) {
+        return entity && entity.tags && entity.tags.has('pano-renderer');
     }
 
     return {
 
-        init: function (app) { /* HTML オーバーレイ方式は app に依存しない */ },
+        init: function (app) {
+            _app = app;
+        },
 
         loadFromURL: function (app, url) {
-            return Promise.resolve(_makePseudoAsset(url, url.split('/').pop()));
+            return _loadAsset(app, { url: url, name: url.split('/').pop() });
         },
 
         loadFromFile: function (app, file) {
-            var src = URL.createObjectURL(file);
-            return Promise.resolve(_makePseudoAsset(src, file.name));
+            return _loadAsset(app, { file: file, name: file.name });
         },
 
-        /**
-         * パノラマ画像をオーバーレイ表示する
-         * @param {pc.Application} app
-         * @param {Object} asset   loadFromURL/File が返した擬似 asset
-         * @param {Object} [options]  互換のため受け取るが現在は未使用
-         */
         create: function (app, asset, options) {
-            if (!asset || !asset.src) {
-                throw new Error('[PanoRenderer] 画像ソースが指定されていません');
+            if (!app || !asset) {
+                throw new Error('[PanoRenderer] app / asset が不正です');
             }
-            _disposeOverlay();
-            _createOverlay();
-            _img.src = asset.src;
-            console.log('[PanoRenderer] 平面スクロール式ビューア起動');
-            return null;
+            options = options || {};
+
+            this.dispose();
+
+            var device = app.graphicsDevice;
+            if (!_sharedMesh)   _sharedMesh   = _buildSphereMesh(device);
+            if (!_sharedShader) _sharedShader = _buildShader(device);
+
+            var entity = new pc.Entity('panorama-sphere');
+            entity.tags.add('pano-renderer');
+
+            var mat = new pc.Material();
+            mat.shader = _sharedShader;
+            mat.setParameter('uPano', asset.resource);
+            mat.setParameter('uYawOffset', (options.yaw || 0) * Math.PI / 180);
+            mat.cull       = pc.CULLFACE_BACK;
+            mat.depthWrite = false;
+            mat.update();
+
+            var mi = new pc.MeshInstance(_sharedMesh, mat, entity);
+            entity.addComponent('render', { meshInstances: [mi] });
+
+            entity.setLocalScale(50, 50, 50);
+            entity.setLocalPosition(0, 1.6, 0);
+
+            app.root.addChild(entity);
+            _entity = entity;
+
+            console.log('[PanoRenderer] 球面投影シェーダー方式 起動');
+            return entity;
         },
 
-        // 平面ビューアでは概念がないため互換用 no-op
-        setYaw: function (yaw) { /* no-op */ },
+        setYaw: function (yaw) {
+            if (!_entity || !_entity.render) return;
+            var mi = _entity.render.meshInstances[0];
+            if (mi && mi.material) {
+                mi.material.setParameter('uYawOffset', (yaw || 0) * Math.PI / 180);
+            }
+        },
 
-        // カメラ固定位置として呼び出し側に返す (互換用に従来値)
-        getCenter: function () { return { x: 0, y: 1.6, z: 0 }; },
+        getCenter: function () {
+            if (!_entity) return { x: 0, y: 1.6, z: 0 };
+            var p = _entity.getLocalPosition();
+            return { x: p.x, y: p.y, z: p.z };
+        },
 
-        dispose: function () { _disposeOverlay(); },
+        dispose: function () {
+            if (!_entity) return;
+            try {
+                if (_entity.render) _entity.removeComponent('render');
+                _entity.destroy();
+            } catch (e) {
+                console.warn('[PanoRenderer] dispose 中にエラー:', e);
+            }
+            _entity = null;
+        },
 
-        isActive: function () { return !!_overlay; }
+        isActive: function () {
+            return _isPanoEntity(_entity);
+        }
     };
 }());
