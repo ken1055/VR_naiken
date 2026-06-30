@@ -65,19 +65,20 @@ window.PanoRenderer = (function () {
                 controls: { mouseViewMode: 'drag' }   // ドラッグで見回す
             });
 
-            // 一枚絵 (タイル無し) を読み込むシンプル構成
             var source   = M.ImageUrlSource.fromString(src);
             var geometry = new M.EquirectGeometry([{ width: 8000 }]);
 
-            // 視野角・ズーム範囲制限
+            // ズーム範囲を Marzipano の限界まで広げる
+            // - 最大 FOV: 165度 (ほぼ全方位が見える広角端)
+            // - 最小 FOV: 20度 (望遠端)
             var limiter = M.RectilinearView.limit.traditional(
-                8192,                       // 最大ズーム解像度
-                130 * Math.PI / 180,        // 最大 FOV (rad) — 広角端
-                15  * Math.PI / 180         // 最小 FOV (rad) — 望遠端
+                8192,
+                165 * Math.PI / 180,
+                20  * Math.PI / 180
             );
-            // 初期 FOV を広めに取って「壁に貼り付いた」感じを回避
+            // 初期 FOV を 130度に (人の自然な視野より広め、対象が小さく見える)
             var view = new M.RectilinearView(
-                { yaw: 0, pitch: 0, fov: 110 * Math.PI / 180 },
+                { yaw: 0, pitch: 0, fov: 130 * Math.PI / 180 },
                 limiter
             );
 
@@ -88,6 +89,12 @@ window.PanoRenderer = (function () {
                 pinFirstLevel: true
             });
             scene.switchTo();
+
+            // コンテナサイズが 0 のまま描画された場合に備えて、次フレームで
+            // リサイズ強制 (Marzipano の updateSize は内部で resize イベントを発火)
+            requestAnimationFrame(function () {
+                if (_viewer && _viewer.updateSize) _viewer.updateSize();
+            });
         });
     }
 
