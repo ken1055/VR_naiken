@@ -361,10 +361,14 @@ window.CameraController = (function () {
         _targetPos.x = resolved.x;
         _targetPos.z = resolved.z;
         // Y: 壁付近で床高さマップが誤った大きな値を返す場合に急上昇するのを防ぐ
-        // 上方向は最大 3m/s、下方向は即時（落下は自然に追従）
-        var maxUpPerFrame = 3.0 * dt;
+        // 上方向は最大 3m/s、下方向は 6m/s でクランプ（家具の上端などで瞬間的に頭が
+        // 押し下げられた際の「がくん」を防ぎつつ、階段降りはほぼ即時に追従させる）
+        var maxUpPerFrame   = 3.0 * dt;
+        var maxDownPerFrame = 6.0 * dt;
         if (resolved.y > _targetPos.y) {
           _targetPos.y = Math.min(resolved.y, _targetPos.y + maxUpPerFrame);
+        } else if (resolved.y < _targetPos.y) {
+          _targetPos.y = Math.max(resolved.y, _targetPos.y - maxDownPerFrame);
         } else {
           _targetPos.y = resolved.y;
         }

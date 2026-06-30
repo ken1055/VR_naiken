@@ -891,6 +891,11 @@ window.Collider = (function () {
                 var minY = floorY + EYE;
                 if (out.y < minY) out.y = minY;
             }
+            // 天井が床から立てない高さしかない場合は「家具の上面」と判定して無視。
+            // 本物の天井ではない場所で頭を押し下げると「がくん」と落下するため。
+            if (ceilY !== null && floorY !== null && (ceilY - floorY) < (EYE + HEAD)) {
+                ceilY = null;
+            }
             if (ceilY !== null) {
                 var maxY = ceilY - HEAD;
                 if (out.y > maxY) out.y = maxY;
