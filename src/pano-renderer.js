@@ -72,11 +72,12 @@ window.PanoRenderer = (function () {
             // 視野角・ズーム範囲制限
             var limiter = M.RectilinearView.limit.traditional(
                 8192,                       // 最大ズーム解像度
-                120 * Math.PI / 180,        // 最大 FOV (rad)
-                10  * Math.PI / 180         // 最小 FOV (rad)
+                130 * Math.PI / 180,        // 最大 FOV (rad) — 広角端
+                15  * Math.PI / 180         // 最小 FOV (rad) — 望遠端
             );
+            // 初期 FOV を広めに取って「壁に貼り付いた」感じを回避
             var view = new M.RectilinearView(
-                { yaw: 0, pitch: 0, fov: 75 * Math.PI / 180 },
+                { yaw: 0, pitch: 0, fov: 110 * Math.PI / 180 },
                 limiter
             );
 
