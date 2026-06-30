@@ -7,8 +7,62 @@
 window.PanoRenderer = (function () {
     'use strict';
 
-    var _app    = null;
-    var _entity = null;
+    var _app        = null;
+    var _entity     = null;
+    var _sharedMesh = null;   // 全パノラマで使い回す高分割スフィア
+
+    // 内向き高分割スフィアメッシュを生成する。
+    // - 緯度 64 / 経度 128 分割。プリミティブの sphere (約 16x32) では equirectangular
+    //   テクスチャの極付近や線が明らかに多角形に見える歪みが出るため自前で作る。
+    // - UV.U を反転して内側から見たときの左右鏡像を解消する。
+    // - 三角形 winding を CW（外側から見て）にし、CULLFACE_BACK で内側だけ描画する。
+    function _buildInvertedSphere(device) {
+        var LAT = 64, LON = 128;
+        var positions = [];
+        var normals   = [];
+        var uvs       = [];
+        var indices   = [];
+
+        for (var lat = 0; lat <= LAT; lat++) {
+            var v   = lat / LAT;                  // 0 (南極) → 1 (北極)
+            var phi = (v - 0.5) * Math.PI;        // -π/2 → π/2
+            var y   = Math.sin(phi);
+            var cp  = Math.cos(phi);
+            for (var lon = 0; lon <= LON; lon++) {
+                var u     = lon / LON;
+                var theta = u * Math.PI * 2;
+                var x = cp * Math.cos(theta);
+                var z = cp * Math.sin(theta);
+                positions.push(x, y, z);
+                // 内向き法線
+                normals.push(-x, -y, -z);
+                // U を反転: 内側から見た時の左右鏡像を相殺
+                // V は equirectangular の上端=北極 (V=0)、下端=南極 (V=1) に合わせる
+                uvs.push(1 - u, 1 - v);
+            }
+        }
+
+        var stride = LON + 1;
+        for (var la = 0; la < LAT; la++) {
+            for (var lo = 0; lo < LON; lo++) {
+                var a = la * stride + lo;
+                var b = a + 1;
+                var c = a + stride;
+                var d = c + 1;
+                // 内側だけ描画するための winding
+                indices.push(a, c, b);
+                indices.push(b, c, d);
+            }
+        }
+
+        var mesh = new pc.Mesh(device);
+        mesh.setPositions(positions);
+        mesh.setNormals(normals);
+        mesh.setUvs(0, uvs);
+        mesh.setIndices(indices);
+        mesh.update(pc.PRIMITIVE_TRIANGLES);
+        return mesh;
+    }
 
     // パノラマ画像を pc.Asset (type: 'texture') としてロードする。
     // file を渡せば File / Blob から、url なら URL から読む。
@@ -89,10 +143,11 @@ window.PanoRenderer = (function () {
 
             this.dispose();
 
+            var device = app.graphicsDevice;
+            if (!_sharedMesh) _sharedMesh = _buildInvertedSphere(device);
+
             var entity = new pc.Entity('panorama-sphere');
             entity.tags.add('pano-renderer');
-
-            entity.addComponent('model', { type: 'sphere' });
 
             var mat = new pc.StandardMaterial();
             mat.diffuse  = new pc.Color(0, 0, 0);
@@ -100,22 +155,20 @@ window.PanoRenderer = (function () {
             mat.emissiveMap = asset.resource;
             mat.useLighting = false;
             mat.useGammaTonemap = false;
-            mat.cull = pc.CULLFACE_FRONT;   // 内面のみ描画
-            mat.depthWrite = false;          // 背景として扱う
+            mat.cull       = pc.CULLFACE_BACK;  // 自前 winding に合わせる
+            mat.depthWrite = false;             // 背景として扱う
             mat.update();
 
-            entity.model.meshInstances.forEach(function (mi) {
-                mi.material = mat;
-            });
+            // 自前の高分割スフィアを meshInstance として entity に貼る
+            var meshInstance = new pc.MeshInstance(_sharedMesh, mat, entity);
+            entity.addComponent('render', { meshInstances: [meshInstance] });
 
-            // 半径 50 (球プリミティブの直径1にスケール100をかけたもの)
-            // カメラの farClip 1000 以内に収まるサイズ
-            entity.setLocalScale(100, 100, 100);
+            // 半径 50。カメラの farClip 1000 以内に収まるサイズ
+            entity.setLocalScale(50, 50, 50);
             entity.setLocalPosition(0, 1.6, 0);
 
             // 初期向き (yaw)。equirectangular の中心が向きたい方向に来るように回す
             var yaw = options.yaw || 0;
-            // X 軸反転で内側から見たときの左右反転を防ぐ
             entity.setLocalEulerAngles(0, yaw, 0);
 
             app.root.addChild(entity);
@@ -148,7 +201,7 @@ window.PanoRenderer = (function () {
         dispose: function () {
             if (!_entity) return;
             try {
-                if (_entity.model) _entity.removeComponent('model');
+                if (_entity.render) _entity.removeComponent('render');
                 _entity.destroy();
             } catch (e) {
                 console.warn('[PanoRenderer] dispose 中にエラー:', e);
