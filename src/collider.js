@@ -299,6 +299,9 @@ window.Collider = (function () {
     }
 
     // ---- PLY ヘッダーのみ解析（頂点データは読まない）----
+    // 3DGS の場合は scale_0/1/2 と opacity も拾うことで、ガウシアンの実サイズに
+    // 基づいたボクセル占有を計算できる（平面の壁が「中心点だけ」では密度不足で
+    // コライダーから抜け落ちるのを防ぐ）。
     function parsePLYHeader(buffer) {
         var bytes = new Uint8Array(buffer);
         var END = 'end_header';
@@ -334,15 +337,24 @@ window.Collider = (function () {
         });
 
         var stride = 0, xo = -1, yo = -1, zo = -1;
+        var s0o = -1, s1o = -1, s2o = -1, opao = -1;
         props.forEach(function (p) {
             if (p.name === 'x') xo = stride;
             if (p.name === 'y') yo = stride;
             if (p.name === 'z') zo = stride;
+            if (p.name === 'scale_0') s0o = stride;
+            if (p.name === 'scale_1') s1o = stride;
+            if (p.name === 'scale_2') s2o = stride;
+            if (p.name === 'opacity') opao = stride;
             stride += p.size;
         });
         if (xo < 0 || yo < 0 || zo < 0) throw new Error('PLY に x/y/z プロパティが見つかりません');
 
-        return { n: nV, stride: stride, xo: xo, yo: yo, zo: zo, dataStart: dataStart };
+        return {
+            n: nV, stride: stride, xo: xo, yo: yo, zo: zo,
+            s0o: s0o, s1o: s1o, s2o: s2o, opao: opao,
+            dataStart: dataStart
+        };
     }
 
     // ---- 公開 API ----
@@ -486,18 +498,23 @@ window.Collider = (function () {
             // --- Phase 0: ヘッダー解析（同期・高速）---
             setTimeout(function () {
                 var n, stride, xo, yo, zo, dataStart, isSplat;
+                var s0o = -1, s1o = -1, s2o = -1, opao = -1;
                 try {
                     if (onProgress) onProgress(1, 'ヘッダーを解析中...');
                     var ext = (filename || '').split('.').pop().toLowerCase();
                     if (ext === 'splat') {
+                        // antimatter15 splat: x,y,z (float32×3), scale_x/y/z (float32×3,
+                        // 既に exp 済み), rgba (uint8×4), rot_quat (uint8×4) = 32B
                         isSplat   = true;
                         n         = Math.floor(buffer.byteLength / 32);
                         stride    = 32; xo = 0; yo = 4; zo = 8; dataStart = 0;
+                        s0o = 12; s1o = 16; s2o = 20;
                     } else {
                         isSplat = false;
                         var h   = parsePLYHeader(buffer);
                         n = h.n; stride = h.stride;
                         xo = h.xo; yo = h.yo; zo = h.zo;
+                        s0o = h.s0o; s1o = h.s1o; s2o = h.s2o; opao = h.opao;
                         dataStart = h.dataStart;
                     }
                 } catch (e) {
@@ -505,8 +522,19 @@ window.Collider = (function () {
                     return;
                 }
 
+                // 3DGS パラメータ
+                // - scale: PLY は log 値 (exp で半径)、splat は既に半径 (m)
+                // - opacity (PLY のみ): logit 値、sigmoid > 0.1 ⇔ raw > -2.197
+                var hasScale = (s0o >= 0 && s1o >= 0 && s2o >= 0);
+                var hasOpa   = (opao >= 0);
+                var OPACITY_THRESH = -2.2;   // 透明度 < 0.1 のガウシアンは無視
+                var MAX_RADIUS_M   = 0.20;   // スタンプ半径の上限 (m)。これより大きい
+                                             // ガウシアンは sky/floater の可能性が高い
+
                 // --- Phase 1: 頂点データを分割読み込み ---
                 var pts      = new Float32Array(n * 3);
+                var radii    = new Float32Array(n);  // ガウシアン半径 (m)。
+                                                     // 0 = scale なし、-1 = opacity フィルタ
                 var dv       = new DataView(buffer, dataStart);
                 var parseIdx = 0;
 
@@ -517,6 +545,20 @@ window.Collider = (function () {
                         pts[i * 3]     = dv.getFloat32(b + xo, true);
                         pts[i * 3 + 1] = dv.getFloat32(b + yo, true);
                         pts[i * 3 + 2] = dv.getFloat32(b + zo, true);
+
+                        if (hasOpa) {
+                            var op = dv.getFloat32(b + opao, true);
+                            if (op < OPACITY_THRESH) { radii[i] = -1; continue; }
+                        }
+                        if (hasScale) {
+                            var sa = dv.getFloat32(b + s0o, true);
+                            var sb = dv.getFloat32(b + s1o, true);
+                            var sc = dv.getFloat32(b + s2o, true);
+                            var maxS = sa > sb ? (sa > sc ? sa : sc) : (sb > sc ? sb : sc);
+                            var r = isSplat ? maxS : Math.exp(maxS);
+                            if (r > MAX_RADIUS_M) r = MAX_RADIUS_M;
+                            radii[i] = r;
+                        }
                     }
                     parseIdx = end;
                     if (parseIdx < n) {
@@ -541,6 +583,7 @@ window.Collider = (function () {
                 function bboxStep() {
                     var end = Math.min(bboxIdx + BBOX_BATCH, n);
                     for (var i = bboxIdx; i < end; i++) {
+                        if (radii[i] < 0) continue;  // 透明ガウシアンは bbox に含めない
                         var c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
                         if (c.cx < minX) minX = c.cx; if (c.cx > maxX) maxX = c.cx;
                         if (c.cy < minY) minY = c.cy; if (c.cy > maxY) maxY = c.cy;
@@ -581,6 +624,7 @@ window.Collider = (function () {
                     var end = Math.min(histIdx + HIST_BATCH, n);
                     var LAST = HIST_BUCKETS - 1;
                     for (var i = histIdx; i < end; i++) {
+                        if (radii[i] < 0) continue;
                         var c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
                         var ix = Math.floor((c.cx - rawMinX) / rangeX * HIST_BUCKETS);
                         var iy = Math.floor((c.cy - rawMinY) / rangeY * HIST_BUCKETS);
@@ -644,7 +688,9 @@ window.Collider = (function () {
                 function voxelStep() {
                     var end = Math.min(voxelIdx + VOXEL_BATCH, n);
                     var b = _bounds;
+                    var voxelSizeM = Math.min(b.sx, b.sy, b.sz) / GRID;
                     for (var i = voxelIdx; i < end; i++) {
+                        if (radii[i] < 0) continue;  // opacity フィルタ
                         var c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
                         // bbox 外のフロートは数えない（edge にクランプすると密度が偽造される）
                         if (c.cx < b.minX || c.cx > b.maxX) continue;
@@ -653,8 +699,35 @@ window.Collider = (function () {
                         var vx = Math.min(GRID - 1, Math.floor((c.cx - b.minX) / b.sx * GRID));
                         var vy = Math.min(GRID - 1, Math.floor((c.cy - b.minY) / b.sy * GRID));
                         var vz = Math.min(GRID - 1, Math.floor((c.cz - b.minZ) / b.sz * GRID));
-                        var idx = vi(vx, vy, vz);
-                        if (_voxels[idx] < 0xFFFF) _voxels[idx]++;  // 飽和加算
+
+                        // ガウシアン半径分のスタンプ。3DGS では平らな壁面が大きな
+                        // ガウシアン 1 個でカバーされ、中心点だけ集計すると密度不足で
+                        // 抜け落ちる。半径分のボクセルに書き込むことで壁を埋める。
+                        // 球状で書き込み、最大 3 ボクセル（〜30cm）で頭打ち。
+                        var radVox = radii[i] > 0
+                            ? Math.min(3, Math.round(radii[i] / voxelSizeM))
+                            : 0;
+                        if (radVox === 0) {
+                            var idx = vi(vx, vy, vz);
+                            if (_voxels[idx] < 0xFFFF) _voxels[idx]++;
+                        } else {
+                            var rSq = radVox * radVox;
+                            for (var dz_ = -radVox; dz_ <= radVox; dz_++) {
+                                var nvz = vz + dz_;
+                                if (nvz < 0 || nvz >= GRID) continue;
+                                for (var dy_ = -radVox; dy_ <= radVox; dy_++) {
+                                    var nvy = vy + dy_;
+                                    if (nvy < 0 || nvy >= GRID) continue;
+                                    for (var dx_ = -radVox; dx_ <= radVox; dx_++) {
+                                        if (dx_*dx_ + dy_*dy_ + dz_*dz_ > rSq) continue;
+                                        var nvx = vx + dx_;
+                                        if (nvx < 0 || nvx >= GRID) continue;
+                                        var idx2 = vi(nvx, nvy, nvz);
+                                        if (_voxels[idx2] < 0xFFFF) _voxels[idx2]++;
+                                    }
+                                }
+                            }
+                        }
                     }
                     voxelIdx = end;
                     if (voxelIdx < n) {
@@ -667,9 +740,9 @@ window.Collider = (function () {
                     }
 
                     // Phase 3 完了 → Phase 4: 二値化 + 連結成分フィルタ
-                    // 密度しきい値は点数比例で軽くノイズを落とす程度（CC フィルタが本命）
-                    var avgDensity = n / GRID3;
-                    var solidThresh = Math.max(1, Math.min(3, Math.round(avgDensity * 2)));
+                    // スタンプ方式では「1 回でもスタンプされたら solid」で十分。
+                    // ノイズ除去は連結成分フィルタ (CC) に任せる。
+                    var solidThresh = 1;
 
                     // Uint16Array(counts) → Uint8Array(solid bool) に置き換え
                     var solid = new Uint8Array(GRID3);
