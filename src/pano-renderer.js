@@ -1,32 +1,39 @@
 /**
  * pano-renderer.js — 360度 (Equirectangular) 画像表示モジュール
  *
- * 球メッシュ + フラグメントシェーダーで equirectangular 画像を歪み無しで表示する。
- * 球のローカル座標を方向ベクトルとして直接 (atan, asin) で UV 化することで
- * カメラ位置の微小ずれに依存しない perspective-correct な極座標マッピングを得る。
- * Insta360 や Photo Sphere Viewer と同じ原理。
+ * 高分割の内向きスフィア + StandardMaterial (emissiveMap) で実装。
+ * カスタムシェーダー方式は PlayCanvas v2.x の Material API と整合せずエラーが
+ * 出るため、安定して動く標準マテリアル + 細かい UV メッシュで歪みを抑える。
  */
 window.PanoRenderer = (function () {
     'use strict';
 
-    var _app          = null;
-    var _entity       = null;
-    var _sharedMesh   = null;
-    var _sharedShader = null;
+    var _app        = null;
+    var _entity     = null;
+    var _sharedMesh = null;   // 高分割スフィア (LAT 128 × LON 256)
 
-    // 内向き球メッシュ (UV はシェーダーで計算)
-    function _buildSphereMesh(device) {
-        var LAT = 32, LON = 64;
+    // 内向き高分割スフィアメッシュ。equirectangular の UV を頂点で持つ。
+    // 鏡像対策のため U.x を反転 (1-u)、V は北極=0 / 南極=1 に合わせる。
+    function _buildInvertedSphere(device) {
+        var LAT = 128, LON = 256;
         var positions = [];
+        var normals   = [];
+        var uvs       = [];
         var indices   = [];
 
         for (var lat = 0; lat <= LAT; lat++) {
-            var phi = (lat / LAT - 0.5) * Math.PI;
+            var v   = lat / LAT;
+            var phi = (v - 0.5) * Math.PI;
             var y   = Math.sin(phi);
             var cp  = Math.cos(phi);
             for (var lon = 0; lon <= LON; lon++) {
-                var theta = (lon / LON) * Math.PI * 2;
-                positions.push(cp * Math.cos(theta), y, cp * Math.sin(theta));
+                var u     = lon / LON;
+                var theta = u * Math.PI * 2;
+                var x = cp * Math.cos(theta);
+                var z = cp * Math.sin(theta);
+                positions.push(x, y, z);
+                normals.push(-x, -y, -z);
+                uvs.push(1 - u, 1 - v);
             }
         }
 
@@ -44,42 +51,11 @@ window.PanoRenderer = (function () {
 
         var mesh = new pc.Mesh(device);
         mesh.setPositions(positions);
+        mesh.setNormals(normals);
+        mesh.setUvs(0, uvs);
         mesh.setIndices(indices);
         mesh.update(pc.PRIMITIVE_TRIANGLES);
         return mesh;
-    }
-
-    function _buildShader(device) {
-        var vshader = [
-            'attribute vec3 vertex_position;',
-            'uniform mat4 matrix_model;',
-            'uniform mat4 matrix_viewProjection;',
-            'varying vec3 vLocal;',
-            'void main(void) {',
-            '    vLocal = vertex_position;',
-            '    gl_Position = matrix_viewProjection * matrix_model * vec4(vertex_position, 1.0);',
-            '}'
-        ].join('\n');
-
-        var fshader = [
-            'precision highp float;',
-            'uniform sampler2D uPano;',
-            'uniform float uYawOffset;',
-            'varying vec3 vLocal;',
-            'const float PI    = 3.14159265359;',
-            'const float TWO_PI = 6.28318530718;',
-            'void main(void) {',
-            '    vec3 d = normalize(vLocal);',
-            '    float u = (atan(d.x, -d.z) + uYawOffset) / TWO_PI + 0.5;',
-            '    u = fract(u);',
-            '    float v = 0.5 - asin(clamp(d.y, -1.0, 1.0)) / PI;',
-            '    gl_FragColor = texture2D(uPano, vec2(u, v));',
-            '}'
-        ].join('\n');
-
-        var attributes = { vertex_position: pc.SEMANTIC_POSITION };
-        return pc.createShaderFromCode(device, vshader, fshader,
-            'pano-equirect', attributes);
     }
 
     function _loadAsset(app, opts) {
@@ -144,18 +120,19 @@ window.PanoRenderer = (function () {
             this.dispose();
 
             var device = app.graphicsDevice;
-            if (!_sharedMesh)   _sharedMesh   = _buildSphereMesh(device);
-            if (!_sharedShader) _sharedShader = _buildShader(device);
+            if (!_sharedMesh) _sharedMesh = _buildInvertedSphere(device);
 
             var entity = new pc.Entity('panorama-sphere');
             entity.tags.add('pano-renderer');
 
-            var mat = new pc.Material();
-            mat.shader = _sharedShader;
-            mat.setParameter('uPano', asset.resource);
-            mat.setParameter('uYawOffset', (options.yaw || 0) * Math.PI / 180);
-            mat.cull       = pc.CULLFACE_BACK;
-            mat.depthWrite = false;
+            var mat = new pc.StandardMaterial();
+            mat.diffuse        = new pc.Color(0, 0, 0);
+            mat.emissive       = new pc.Color(1, 1, 1);
+            mat.emissiveMap    = asset.resource;
+            mat.useLighting    = false;
+            mat.useGammaTonemap = false;
+            mat.cull           = pc.CULLFACE_BACK;  // 自前 winding に合わせる
+            mat.depthWrite     = false;
             mat.update();
 
             var mi = new pc.MeshInstance(_sharedMesh, mat, entity);
@@ -164,19 +141,19 @@ window.PanoRenderer = (function () {
             entity.setLocalScale(50, 50, 50);
             entity.setLocalPosition(0, 1.6, 0);
 
+            // 初期向き (yaw) は entity 自体を回転させて反映
+            entity.setLocalEulerAngles(0, options.yaw || 0, 0);
+
             app.root.addChild(entity);
             _entity = entity;
 
-            console.log('[PanoRenderer] 球面投影シェーダー方式 起動');
+            console.log('[PanoRenderer] 高分割スフィア (LAT 128 × LON 256) 起動');
             return entity;
         },
 
         setYaw: function (yaw) {
-            if (!_entity || !_entity.render) return;
-            var mi = _entity.render.meshInstances[0];
-            if (mi && mi.material) {
-                mi.material.setParameter('uYawOffset', (yaw || 0) * Math.PI / 180);
-            }
+            if (!_entity) return;
+            _entity.setLocalEulerAngles(0, yaw || 0, 0);
         },
 
         getCenter: function () {
