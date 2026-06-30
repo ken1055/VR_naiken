@@ -1,141 +1,136 @@
 /**
  * pano-renderer.js — 360度 (Equirectangular) 画像表示モジュール
  *
- * PlayCanvas v2.x のプリミティブ sphere + StandardMaterial で実装。
- * カスタムメッシュ / カスタムシェーダー方式はエンジンの内部 API と整合せず
- * 'impl' / 'failed' プロパティの undefined エラーになるため、標準コンポーネント
- * に統一する。
+ * Marzipano (Google 製の WebGL パノラマビューアライブラリ、MIT) を CDN から
+ * 動的ロードして使う。PlayCanvas の自前球面投影では極付近で歪みが目立ったため、
+ * 業界標準のライブラリに切り替えてピクセル単位の正確な投影と滑らかな見回しを得る。
  *
- * プリミティブ sphere の分割は粗いため equirectangular の極付近で歪みが出る。
- * 完全なピクセル単位投影は将来 ShaderMaterial 等での再実装を検討。
+ * Marzipano は独自に WebGL canvas を生成して画面にオーバーレイ表示する。
+ * PlayCanvas の canvas は背後で動き続けるが、見えないので問題なし。
  */
 window.PanoRenderer = (function () {
     'use strict';
 
-    var _app    = null;
-    var _entity = null;
+    var MARZIPANO_URL =
+        'https://cdn.jsdelivr.net/npm/marzipano@0.10.2/dist/marzipano.js';
 
-    function _loadAsset(app, opts) {
-        return new Promise(function (resolve, reject) {
-            var name = opts.name || 'panorama';
-            var src  = opts.url;
-            var objectURL = null;
-            if (opts.file) {
-                objectURL = URL.createObjectURL(opts.file);
-                src = objectURL;
-            }
-            if (!src) { reject(new Error('画像のソースが指定されていません')); return; }
+    var _viewer    = null;
+    var _container = null;
+    var _loadingMarzipano = null;   // ロード Promise キャッシュ
 
-            var asset = new pc.Asset(name, 'texture', { url: src, filename: name });
+    function _ensureMarzipanoLoaded() {
+        if (window.Marzipano) return Promise.resolve();
+        if (_loadingMarzipano) return _loadingMarzipano;
+        _loadingMarzipano = new Promise(function (resolve, reject) {
+            var s = document.createElement('script');
+            s.src = MARZIPANO_URL;
+            s.onload  = function () { resolve(); };
+            s.onerror = function () {
+                reject(new Error('Marzipano のロードに失敗しました (CDN到達不可)'));
+            };
+            document.head.appendChild(s);
+        });
+        return _loadingMarzipano;
+    }
 
-            asset.ready(function (loadedAsset) {
-                var tex = loadedAsset.resource;
-                if (tex) {
-                    tex.addressU   = pc.ADDRESS_REPEAT;
-                    tex.addressV   = pc.ADDRESS_CLAMP_TO_EDGE;
-                    tex.minFilter  = pc.FILTER_LINEAR_MIPMAP_LINEAR;
-                    tex.magFilter  = pc.FILTER_LINEAR;
-                    tex.anisotropy = 16;
-                }
-                if (objectURL) URL.revokeObjectURL(objectURL);
-                resolve(loadedAsset);
+    function _createOverlay() {
+        _container = document.createElement('div');
+        _container.id = 'pano-marzipano';
+        _container.style.cssText = [
+            'position:fixed;', 'inset:0;', 'z-index:20;',
+            'background:#000;', 'overflow:hidden;'
+        ].join('');
+        document.body.appendChild(_container);
+    }
+
+    function _disposeOverlay() {
+        if (_viewer) {
+            try { _viewer.destroy(); }
+            catch (e) { console.warn('[PanoRenderer] viewer.destroy エラー:', e); }
+            _viewer = null;
+        }
+        if (_container && _container.parentNode) {
+            _container.parentNode.removeChild(_container);
+        }
+        _container = null;
+    }
+
+    function _show(src) {
+        return _ensureMarzipanoLoaded().then(function () {
+            _disposeOverlay();
+            _createOverlay();
+
+            var M = window.Marzipano;
+            _viewer = new M.Viewer(_container, {
+                controls: { mouseViewMode: 'drag' }   // ドラッグで見回す
             });
-            asset.on('error', function (err) {
-                if (objectURL) URL.revokeObjectURL(objectURL);
-                reject(new Error('360度画像の読み込みに失敗しました: '
-                    + (err ? String(err) : 'Unknown error')));
+
+            // 一枚絵 (タイル無し) を読み込むシンプル構成
+            var source   = M.ImageUrlSource.fromString(src);
+            var geometry = new M.EquirectGeometry([{ width: 8000 }]);
+
+            // 視野角・ズーム範囲制限
+            var limiter = M.RectilinearView.limit.traditional(
+                8192,                       // 最大ズーム解像度
+                120 * Math.PI / 180,        // 最大 FOV (rad)
+                10  * Math.PI / 180         // 最小 FOV (rad)
+            );
+            var view = new M.RectilinearView(
+                { yaw: 0, pitch: 0, fov: 75 * Math.PI / 180 },
+                limiter
+            );
+
+            var scene = _viewer.createScene({
+                source:   source,
+                geometry: geometry,
+                view:     view,
+                pinFirstLevel: true
             });
-            app.assets.add(asset);
-            app.assets.load(asset);
+            scene.switchTo();
         });
     }
 
-    function _isPanoEntity(entity) {
-        return entity && entity.tags && entity.tags.has('pano-renderer');
+    function _makePseudoAsset(src, name) {
+        return { __pano: true, src: src, name: name || 'panorama' };
     }
 
     return {
 
-        init: function (app) {
-            _app = app;
-        },
+        init: function (app) { /* Marzipano は PlayCanvas に依存しない */ },
 
         loadFromURL: function (app, url) {
-            return _loadAsset(app, { url: url, name: url.split('/').pop() });
+            return Promise.resolve(_makePseudoAsset(url, url.split('/').pop()));
         },
 
         loadFromFile: function (app, file) {
-            return _loadAsset(app, { file: file, name: file.name });
+            var src = URL.createObjectURL(file);
+            return Promise.resolve(_makePseudoAsset(src, file.name));
         },
 
+        /**
+         * Marzipano ビューアでパノラマを表示する
+         */
         create: function (app, asset, options) {
-            if (!app || !asset) {
-                throw new Error('[PanoRenderer] app / asset が不正です');
+            if (!asset || !asset.src) {
+                throw new Error('[PanoRenderer] 画像ソースが指定されていません');
             }
-            options = options || {};
-
-            this.dispose();
-
-            var entity = new pc.Entity('panorama-sphere');
-            entity.tags.add('pano-renderer');
-
-            // PlayCanvas プリミティブ sphere を使う
-            entity.addComponent('render', { type: 'sphere' });
-
-            var mat = new pc.StandardMaterial();
-            mat.diffuse         = new pc.Color(0, 0, 0);
-            mat.emissive        = new pc.Color(1, 1, 1);
-            mat.emissiveMap     = asset.resource;
-            mat.useLighting     = false;
-            mat.useGammaTonemap = false;
-            mat.cull            = pc.CULLFACE_FRONT;   // 内面のみ描画
-            mat.depthWrite      = false;
-            mat.update();
-
-            if (entity.render && entity.render.meshInstances) {
-                entity.render.meshInstances.forEach(function (mi) {
-                    mi.material = mat;
-                });
-            }
-
-            // 半径 50 (プリミティブ sphere は直径1なので scale=100 で直径100=半径50)
-            entity.setLocalScale(100, 100, 100);
-            entity.setLocalPosition(0, 1.6, 0);
-
-            // 初期向き (yaw)
-            entity.setLocalEulerAngles(0, options.yaw || 0, 0);
-
-            app.root.addChild(entity);
-            _entity = entity;
-
-            console.log('[PanoRenderer] プリミティブ sphere 起動');
-            return entity;
+            _show(asset.src).then(function () {
+                console.log('[PanoRenderer] Marzipano 起動');
+            }).catch(function (err) {
+                console.error('[PanoRenderer]', err);
+                if (window.UI && UI.showError) UI.showError(err.message);
+            });
+            return null;
         },
 
-        setYaw: function (yaw) {
-            if (!_entity) return;
-            _entity.setLocalEulerAngles(0, yaw || 0, 0);
-        },
+        // Marzipano が独自に向き制御するので no-op
+        setYaw: function () { /* no-op */ },
 
-        getCenter: function () {
-            if (!_entity) return { x: 0, y: 1.6, z: 0 };
-            var p = _entity.getLocalPosition();
-            return { x: p.x, y: p.y, z: p.z };
-        },
+        // カメラ固定位置の互換用 (camera-controller の lockPosition に渡す)
+        getCenter: function () { return { x: 0, y: 1.6, z: 0 }; },
 
-        dispose: function () {
-            if (!_entity) return;
-            try {
-                if (_entity.render) _entity.removeComponent('render');
-                _entity.destroy();
-            } catch (e) {
-                console.warn('[PanoRenderer] dispose 中にエラー:', e);
-            }
-            _entity = null;
-        },
+        dispose: function () { _disposeOverlay(); },
 
-        isActive: function () {
-            return _isPanoEntity(_entity);
-        }
+        isActive: function () { return !!_container; }
     };
 }());
