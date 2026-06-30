@@ -73,17 +73,17 @@ window.PanoRenderer = (function () {
             var source   = M.ImageUrlSource.fromString(src);
             var geometry = new M.EquirectGeometry([{ width: 8000 }]);
 
-            // ズーム範囲を Marzipano の限界まで広げる
-            // - 最大 FOV: 165度 (ほぼ全方位が見える広角端)
-            // - 最小 FOV: 20度 (望遠端)
+            // ズーム範囲: 最大 200度・最小 20度
+            // ※ RectilinearView は透視投影なので 180度近くで像が急激に引き伸び、
+            //   180度を超えると数学的に表現不能。Marzipano が内部でクリップする
+            //   可能性あり (その場合は実効上限 ~179度になる)。
             var limiter = M.RectilinearView.limit.traditional(
                 8192,
-                165 * Math.PI / 180,
+                200 * Math.PI / 180,
                 20  * Math.PI / 180
             );
-            // 初期 FOV を 130度に (人の自然な視野より広め、対象が小さく見える)
             var view = new M.RectilinearView(
-                { yaw: 0, pitch: 0, fov: 130 * Math.PI / 180 },
+                { yaw: 0, pitch: 0, fov: 200 * Math.PI / 180 },
                 limiter
             );
 
