@@ -16,6 +16,7 @@ window.PanoRenderer = (function () {
 
     var _viewer    = null;
     var _container = null;
+    var _wheelHandler     = null;   // 自前ホイールズーム
     var _loadingMarzipano = null;   // ロード Promise キャッシュ
 
     function _ensureMarzipanoLoaded() {
@@ -44,6 +45,10 @@ window.PanoRenderer = (function () {
     }
 
     function _disposeOverlay() {
+        if (_container && _wheelHandler) {
+            _container.removeEventListener('wheel', _wheelHandler);
+        }
+        _wheelHandler = null;
         if (_viewer) {
             try { _viewer.destroy(); }
             catch (e) { console.warn('[PanoRenderer] viewer.destroy エラー:', e); }
@@ -95,6 +100,18 @@ window.PanoRenderer = (function () {
             requestAnimationFrame(function () {
                 if (_viewer && _viewer.updateSize) _viewer.updateSize();
             });
+
+            // Marzipano デフォルトには wheel zoom が含まれないので自前で実装
+            _wheelHandler = function (e) {
+                if (!_viewer) return;
+                e.preventDefault();
+                var v = _viewer.scene().view();
+                var curFov = v.fov();
+                var factor = e.deltaY > 0 ? 1.12 : 1 / 1.12;
+                v.setFov(curFov * factor);
+            };
+            _container.addEventListener('wheel', _wheelHandler,
+                { passive: false });
         });
     }
 
