@@ -865,6 +865,61 @@ window.Collider = (function () {
         },
 
         /**
+         * 前フレーム位置 → 新位置への移動をボクセル幅の半分ずつに分割し、
+         * 各サブステップで resolvePosition を適用して壁を貫通しないように補正する。
+         * 1フレームの移動量がボクセル幅を超えると薄い壁を踏み越えてしまい、
+         * 反対側の床高さに引っ張られて「がくん」と落下するのを防ぐ。
+         * @param {pc.Vec3} prevPos
+         * @param {pc.Vec3} newPos
+         * @param {number}  eyeHeight
+         * @returns {pc.Vec3}
+         */
+        resolvePositionSwept: function (prevPos, newPos, eyeHeight) {
+            if (!_ready || !_enabled) {
+                return new pc.Vec3(newPos.x, newPos.y, newPos.z);
+            }
+
+            // サブステップ単位（ボクセル XZ 幅の半分）を決める
+            var stepSize;
+            if (_svo) {
+                stepSize = _svo.meta.voxelResolution * 0.5;
+            } else if (_bounds) {
+                stepSize = Math.min(_bounds.sx, _bounds.sz) / (GRID - 1) * 0.5;
+            } else {
+                return this.resolvePosition(newPos, eyeHeight);
+            }
+
+            var dx = newPos.x - prevPos.x;
+            var dz = newPos.z - prevPos.z;
+            var dy = newPos.y - prevPos.y;
+            var moveDistXZ = Math.sqrt(dx * dx + dz * dz);
+
+            // 1ステップで収まる短距離移動は通常パスへ
+            if (moveDistXZ <= stepSize) return this.resolvePosition(newPos, eyeHeight);
+
+            var steps = Math.ceil(moveDistXZ / stepSize);
+            if (steps > 16) steps = 16;   // 長距離移動（テレポート相当）は上限
+
+            var cur = new pc.Vec3();
+            var resolved = new pc.Vec3(prevPos.x, prevPos.y, prevPos.z);
+            // 直前のサブステップで蓄積した押し戻し量を継承する
+            // (壁の手前で止まったら、次のステップもその位置から再開する)
+            for (var s = 1; s <= steps; s++) {
+                var t  = s / steps;
+                var tp = (s - 1) / steps;
+                var offsetX = resolved.x - (prevPos.x + dx * tp);
+                var offsetZ = resolved.z - (prevPos.z + dz * tp);
+                cur.set(
+                    prevPos.x + dx * t + offsetX,
+                    prevPos.y + dy * t,
+                    prevPos.z + dz * t + offsetZ
+                );
+                resolved = this.resolvePosition(cur, eyeHeight);
+            }
+            return resolved;
+        },
+
+        /**
          * カメラ位置に床・天井衝突を適用して補正後の pc.Vec3 を返す
          * @param {pc.Vec3} pos
          * @param {number}  eyeHeight  床から目線までの高さ (m)

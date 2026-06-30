@@ -12,6 +12,8 @@ window.CameraController = (function () {
   var _targetYaw   = 0;
   var _targetPitch = 0;
   var _targetPos   = new pc.Vec3(0, 2, 5);
+  // 前フレームのコリジョン適用後位置（スイープ判定の始点）
+  var _prevResolvedPos = new pc.Vec3(0, 2, 5);
 
   // 表示姿勢（毎フレーム lerp で目標に追従）
   var _yaw   = 0;
@@ -356,7 +358,9 @@ window.CameraController = (function () {
 
       // 床・天井・壁コライダーを適用
       if (window.Collider && Collider.isReady() && Collider.isEnabled()) {
-        var resolved = Collider.resolvePosition(_targetPos, 1.0);
+        // スイープ判定: 前フレーム位置から今の目標位置までをサブステップで補正し、
+        // 1フレームの移動量が薄い壁を貫通しないようにする
+        var resolved = Collider.resolvePositionSwept(_prevResolvedPos, _targetPos, 1.0);
         // XZ: 壁補正は即時適用
         _targetPos.x = resolved.x;
         _targetPos.z = resolved.z;
@@ -372,6 +376,9 @@ window.CameraController = (function () {
         } else {
           _targetPos.y = resolved.y;
         }
+        _prevResolvedPos.copy(_targetPos);
+      } else {
+        _prevResolvedPos.copy(_targetPos);
       }
 
       // Exponential lerp（フレームレート非依存）
@@ -400,6 +407,7 @@ window.CameraController = (function () {
     setPosition: function (x, y, z) {
       _targetPos.set(x, y, z);
       _pos.set(x, y, z);
+      _prevResolvedPos.set(x, y, z);
     },
 
     /** オービット注視点を設定 */
@@ -432,6 +440,7 @@ window.CameraController = (function () {
     /** 位置・向きを即時セット（コンパニオン JSON 適用用） */
     teleport: function (x, y, z, yaw, pitch) {
       _targetPos.set(x, y, z);  _pos.set(x, y, z);
+      _prevResolvedPos.set(x, y, z);
       _targetYaw   = yaw   || 0; _yaw   = yaw   || 0;
       _targetPitch = pitch || 0; _pitch = pitch || 0;
       applyTransform();
