@@ -6,9 +6,19 @@
 window.Collider = (function () {
     'use strict';
 
-    var GRID  = 128;            // ボクセルグリッド 1辺の解像度
+    var GRID  = 128;            // ボクセルグリッド 1辺の解像度（Phase2: シーンに応じ可変）
     var GRID2 = GRID * GRID;
     var GRID3 = GRID * GRID * GRID;
+
+    // Phase 2: 解像度をシーンサイズに合わせる。薄壁が潰れないよう ~2.5cm/voxel を狙い、
+    // メモリ/ファイルの上限として GRID_MAX で頭打ちにする（超広域は splat-transform SVO を推奨）。
+    var TARGET_VOXEL_M = 0.025;
+    var GRID_MIN = 128, GRID_MAX = 192;
+    function _setGrid(g) {
+        GRID  = g | 0;
+        GRID2 = GRID * GRID;
+        GRID3 = GRID * GRID * GRID;
+    }
 
     // ロバスト bbox: 全点の min/max ではなくパーセンタイルで bbox を決める
     // ノイズフロートに引きずられて grid 分解能が落ちるのを防ぐ
@@ -32,6 +42,10 @@ window.Collider = (function () {
     // ---- splat-transform SVO (Sparse Voxel Octree) ----
     var _svo     = null;   // { nodes: Uint32Array, leafData: Uint32Array, meta: Object }
     var _ceilmap = null;   // Float32Array[GRID^2] — 天井高さマップ
+
+    // Phase 3c: 手動コリジョン箱（ガラス・鏡など自動検出できない面）。ワールド AABB。
+    // シーン .json の colliderBoxes から復元（main.js 経由）。
+    var _manualBoxes = [];  // [ [minX,minY,minZ, maxX,maxY,maxZ], ... ]
 
     // 8ビットのポップカウント（childMask 用）
     function popcount8(v) {
@@ -182,23 +196,40 @@ window.Collider = (function () {
                     }
                 }
             }
-        } else if ((_voxels || _wallmask) && _bounds) {
-            // _voxels (生成直後の3D solid) があればそれを優先、無ければ _wallmask (.hmap.json から)
+        } else if ((_wallmask || _voxels) && _bounds) {
+            // 壁判定は 2D 壁マスク（床+0.3〜1.6m を OR したもの）を優先する。
+            // 3DGS の壁は「穴あきの厚さ1ボクセル面」になりやすく、単層 voxel だと
+            // 薄壁を取りこぼす。帯を OR 済みの _wallmask を使うことで穴を埋める。
+            // _wallmask が無い古いデータのときだけ _voxels にフォールバックし、
+            // その場合も単層ではなく人の高さ帯を OR で見る。
             var b        = _bounds;
             var voxelW   = b.sx / (GRID - 1);
             var voxelD   = b.sz / (GRID - 1);
             var searchR2 = Math.ceil(radius / Math.min(voxelW, voxelD)) + 1;
             var cvx2 = Math.max(0, Math.min(GRID - 1, Math.round((wx - b.minX) / b.sx * (GRID - 1))));
-            var cvy2 = Math.max(0, Math.min(GRID - 1, Math.round((checkY - b.minY) / b.sy * (GRID - 1))));
             var cvz2 = Math.max(0, Math.min(GRID - 1, Math.round((wz - b.minZ) / b.sz * (GRID - 1))));
+
+            // _voxels フォールバック用の縦帯（腰基準 -0.2〜+0.9m ≒ 床+0.3〜1.4m）
+            var bandLoVY = 0, bandHiVY = 0;
+            if (!_wallmask && _voxels) {
+                bandLoVY = Math.max(0, Math.min(GRID - 1, Math.round((checkY - 0.2 - b.minY) / b.sy * (GRID - 1))));
+                bandHiVY = Math.max(0, Math.min(GRID - 1, Math.round((checkY + 0.9 - b.minY) / b.sy * (GRID - 1))));
+                if (bandHiVY < bandLoVY) { var _t = bandLoVY; bandLoVY = bandHiVY; bandHiVY = _t; }
+            }
 
             for (var dvx2 = -searchR2; dvx2 <= searchR2; dvx2++) {
                 for (var dvz2 = -searchR2; dvz2 <= searchR2; dvz2++) {
                     var vx2 = cvx2 + dvx2, vz2 = cvz2 + dvz2;
                     if (vx2 < 0 || vz2 < 0 || vx2 >= GRID || vz2 >= GRID) continue;
-                    var blocked = _voxels
-                        ? !!_voxels[vi(vx2, cvy2, vz2)]
-                        : !!_wallmask[vx2 + vz2 * GRID];
+                    var blocked;
+                    if (_wallmask) {
+                        blocked = !!_wallmask[vx2 + vz2 * GRID];
+                    } else {
+                        blocked = false;
+                        for (var bvy = bandLoVY; bvy <= bandHiVY; bvy++) {
+                            if (_voxels[vi(vx2, bvy, vz2)]) { blocked = true; break; }
+                        }
+                    }
                     if (!blocked) continue;
                     var vMinX2 = b.minX + vx2 * voxelW;
                     var vMinZ2 = b.minZ + vz2 * voxelD;
@@ -215,6 +246,10 @@ window.Collider = (function () {
             }
         }
 
+        // 安全弁: 1回の押し出し量を制限（不完全なコライダーでの吹き飛ばし防止）
+        var plen0 = Math.sqrt(pushX * pushX + pushZ * pushZ);
+        if (plen0 > 0.25) { pushX = pushX / plen0 * 0.25; pushZ = pushZ / plen0 * 0.25; }
+
         return { x: wx + pushX, z: wz + pushZ };
     }
 
@@ -229,6 +264,177 @@ window.Collider = (function () {
     }
 
     function vi(vx, vy, vz) { return vx + vy * GRID + vz * GRID2; }
+
+    // ================================================================
+    // Phase 1: 真の 3D カプセル判定用ヘルパー（_voxels / SVO 共通）
+    // ================================================================
+    // ワールド座標→ボクセル添字（生成時と同じ floor((w-min)/s*GRID) 規約）
+    function _wvx(w, min, s) { return Math.floor((w - min) / s * GRID); }
+
+    // 体の縦帯 [bandLoY, bandHiY] に重なる占有ボクセルから XZ 押し出しを計算する。
+    // 単層ではなく「足元+段差〜頭」の帯で見るので、薄壁を高さに関係なく捕捉できる。
+    // _voxels（生成直後 / 新 hmap の 3D 復元）と SVO の両方に対応。
+    function resolveWallBand(wx, wz, radius, bandLoY, bandHiY) {
+        var pushX = 0, pushZ = 0;
+
+        if (_svo) {
+            var meta = _svo.meta, res = meta.voxelResolution;
+            var gMin = meta.gridBounds.min, gMax = meta.gridBounds.max;
+            var maxVX = Math.ceil((gMax[0] - gMin[0]) / res);
+            var maxVZ = Math.ceil((gMax[2] - gMin[2]) / res);
+            var maxVY = Math.ceil((gMax[1] - gMin[1]) / res);
+            var loVY  = Math.max(0, Math.floor((bandLoY - gMin[1]) / res));
+            var hiVY  = Math.min(maxVY - 1, Math.floor((bandHiY - gMin[1]) / res));
+            var searchR = Math.ceil(radius / res) + 1;
+            var cvx = Math.floor((wx - gMin[0]) / res);
+            var cvz = Math.floor((wz - gMin[2]) / res);
+            for (var dx = -searchR; dx <= searchR; dx++) {
+                for (var dz = -searchR; dz <= searchR; dz++) {
+                    var vx = cvx + dx, vz = cvz + dz;
+                    if (vx < 0 || vz < 0 || vx >= maxVX || vz >= maxVZ) continue;
+                    var hit = false;
+                    for (var vy = loVY; vy <= hiVY; vy++) {
+                        if (isVoxelOccupied_SVO(vx, vy, vz)) { hit = true; break; }
+                    }
+                    if (!hit) continue;
+                    var vMinX = gMin[0] + vx * res, vMinZ = gMin[2] + vz * res;
+                    var nearX = Math.max(vMinX, Math.min(wx, vMinX + res));
+                    var nearZ = Math.max(vMinZ, Math.min(wz, vMinZ + res));
+                    var ddx = wx - nearX, ddz = wz - nearZ;
+                    var dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                    var ov = radius - dist;
+                    if (ov > 0) {
+                        if (dist < 1e-4) pushX += radius;
+                        else { pushX += (ddx / dist) * ov; pushZ += (ddz / dist) * ov; }
+                    }
+                }
+            }
+        } else if (_voxels && _bounds) {
+            var b = _bounds;
+            var voxelW = b.sx / GRID, voxelD = b.sz / GRID;
+            var loVY2 = Math.max(0, _wvx(bandLoY, b.minY, b.sy));
+            var hiVY2 = Math.min(GRID - 1, _wvx(bandHiY, b.minY, b.sy));
+            var searchR2 = Math.ceil(radius / Math.min(voxelW, voxelD)) + 1;
+            var cvx2 = _wvx(wx, b.minX, b.sx), cvz2 = _wvx(wz, b.minZ, b.sz);
+            for (var ex = -searchR2; ex <= searchR2; ex++) {
+                for (var ez = -searchR2; ez <= searchR2; ez++) {
+                    var ax = cvx2 + ex, az = cvz2 + ez;
+                    if (ax < 0 || az < 0 || ax >= GRID || az >= GRID) continue;
+                    var hit2 = false;
+                    for (var vy2 = loVY2; vy2 <= hiVY2; vy2++) {
+                        if (_voxels[vi(ax, vy2, az)]) { hit2 = true; break; }
+                    }
+                    if (!hit2) continue;
+                    var vMinX2 = b.minX + ax * voxelW, vMinZ2 = b.minZ + az * voxelD;
+                    var nearX2 = Math.max(vMinX2, Math.min(wx, vMinX2 + voxelW));
+                    var nearZ2 = Math.max(vMinZ2, Math.min(wz, vMinZ2 + voxelD));
+                    var gx = wx - nearX2, gz = wz - nearZ2;
+                    var dist2 = Math.sqrt(gx * gx + gz * gz);
+                    var ov2 = radius - dist2;
+                    if (ov2 > 0) {
+                        if (dist2 < 1e-4) pushX += radius;
+                        else { pushX += (gx / dist2) * ov2; pushZ += (gz / dist2) * ov2; }
+                    }
+                }
+            }
+        }
+
+        // Phase 3c: 手動コリジョン箱（ガラス・鏡）。縦帯 [bandLoY,bandHiY] と Y が重なるものだけ。
+        for (var mb = 0; mb < _manualBoxes.length; mb++) {
+            var box = _manualBoxes[mb];
+            if (bandHiY < box[1] || bandLoY > box[4]) continue;
+            var bnx = Math.max(box[0], Math.min(wx, box[3]));
+            var bnz = Math.max(box[2], Math.min(wz, box[5]));
+            var bdx = wx - bnx, bdz = wz - bnz;
+            var bdist = Math.sqrt(bdx * bdx + bdz * bdz);
+            var bov = radius - bdist;
+            if (bov > 0) {
+                if (bdist < 1e-4) pushX += radius;
+                else { pushX += (bdx / bdist) * bov; pushZ += (bdz / bdist) * bov; }
+            }
+        }
+
+        // 安全弁: 1回の押し出し量を上限で制限する。壁だらけの不完全なコライダーでも
+        // カメラが部屋の外へ「吹き飛ばされる」のを防ぐ（スイープで徐々に解決される）。
+        var plen = Math.sqrt(pushX * pushX + pushZ * pushZ);
+        var MAX_PUSH = 0.25;
+        if (plen > MAX_PUSH) { pushX = pushX / plen * MAX_PUSH; pushZ = pushZ / plen * MAX_PUSH; }
+
+        return { x: wx + pushX, z: wz + pushZ };
+    }
+
+    // (wx,wz) で「立てる面の上端ワールド Y」。maxY 以下で最も高い占有ボクセルの上端。
+    // 段差・台の上に乗れるようにする。無ければ null。
+    function supportTopWorld(wx, wz, maxY) {
+        if (_svo) {
+            var meta = _svo.meta, res = meta.voxelResolution, gMin = meta.gridBounds.min, gMax = meta.gridBounds.max;
+            var vx = Math.floor((wx - gMin[0]) / res), vz = Math.floor((wz - gMin[2]) / res);
+            var maxVX = Math.ceil((gMax[0] - gMin[0]) / res), maxVZ = Math.ceil((gMax[2] - gMin[2]) / res);
+            var maxVY = Math.ceil((gMax[1] - gMin[1]) / res);
+            if (vx < 0 || vz < 0 || vx >= maxVX || vz >= maxVZ) return null;
+            var topVY = Math.min(maxVY - 1, Math.floor((maxY - gMin[1]) / res));
+            for (var vy = topVY; vy >= 0; vy--) {
+                if (isVoxelOccupied_SVO(vx, vy, vz)) return gMin[1] + (vy + 1) * res;
+            }
+            return null;
+        }
+        if (_voxels && _bounds) {
+            var b = _bounds;
+            var ax = _wvx(wx, b.minX, b.sx), az = _wvx(wz, b.minZ, b.sz);
+            if (ax < 0 || az < 0 || ax >= GRID || az >= GRID) return null;
+            var top = Math.min(GRID - 1, _wvx(maxY, b.minY, b.sy));
+            for (var vy2 = top; vy2 >= 0; vy2--) {
+                if (_voxels[vi(ax, vy2, az)]) return b.minY + (vy2 + 1) / GRID * b.sy;
+            }
+            return null;
+        }
+        return null;
+    }
+
+    // (wx,wz) で fromY より上にある最も低い占有ボクセルの下端（＝天井）。無ければ null。
+    function ceilBottomWorld(wx, wz, fromY) {
+        if (_svo) {
+            var meta = _svo.meta, res = meta.voxelResolution, gMin = meta.gridBounds.min, gMax = meta.gridBounds.max;
+            var vx = Math.floor((wx - gMin[0]) / res), vz = Math.floor((wz - gMin[2]) / res);
+            var maxVX = Math.ceil((gMax[0] - gMin[0]) / res), maxVZ = Math.ceil((gMax[2] - gMin[2]) / res);
+            var maxVY = Math.ceil((gMax[1] - gMin[1]) / res);
+            if (vx < 0 || vz < 0 || vx >= maxVX || vz >= maxVZ) return null;
+            var startVY = Math.max(0, Math.floor((fromY - gMin[1]) / res) + 1);
+            for (var vy = startVY; vy < maxVY; vy++) {
+                if (isVoxelOccupied_SVO(vx, vy, vz)) return gMin[1] + vy * res;
+            }
+            return null;
+        }
+        if (_voxels && _bounds) {
+            var b = _bounds;
+            var ax = _wvx(wx, b.minX, b.sx), az = _wvx(wz, b.minZ, b.sz);
+            if (ax < 0 || az < 0 || ax >= GRID || az >= GRID) return null;
+            var startVY2 = Math.max(0, _wvx(fromY, b.minY, b.sy) + 1);
+            for (var vy2 = startVY2; vy2 < GRID; vy2++) {
+                if (_voxels[vi(ax, vy2, az)]) return b.minY + vy2 / GRID * b.sy;
+            }
+            return null;
+        }
+        return null;
+    }
+
+    // ---- 3D 占有ビットのパック/アンパック（.hmap.json 保存でビューアにも 3D を渡す）----
+    function _packVoxels(v) {
+        var bytes = new Uint8Array((v.length + 7) >> 3);
+        for (var i = 0; i < v.length; i++) if (v[i]) bytes[i >> 3] |= (1 << (i & 7));
+        var bin = '', CH = 0x8000;
+        for (var o = 0; o < bytes.length; o += CH) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(o, Math.min(o + CH, bytes.length)));
+        }
+        return btoa(bin);
+    }
+    function _unpackVoxels(b64) {
+        var bin = atob(b64), bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        var v = new Uint8Array(GRID3);
+        for (var j = 0; j < v.length; j++) v[j] = (bytes[j >> 3] >> (j & 7)) & 1;
+        return v;
+    }
 
     // ---- PLY パーサー (binary_little_endian) ----
     function parsePLY(buffer) {
@@ -403,6 +609,7 @@ window.Collider = (function () {
             try {
                 if (!data || !data.bounds || !data.hmap) throw new Error('不正なフォーマット');
                 _bounds = data.bounds;
+                _setGrid(data.grid || 128);   // Phase 2: 生成時の解像度に合わせる
                 // JSON シリアライズで NaN → null になっているので NaN に戻す
                 function toFloatArrayWithNaN(src) {
                     var arr = new Float32Array(src.length);
@@ -414,11 +621,17 @@ window.Collider = (function () {
                 _hmap    = toFloatArrayWithNaN(data.hmap);
                 _ceilmap = data.ceilmap  ? toFloatArrayWithNaN(data.ceilmap) : null;
                 _wallmask = data.wallmask ? new Uint8Array(data.wallmask) : null;
+                // v3: 3D 占有ボクセルがあれば復元 → 実行時に 3D カプセル判定が使える
+                if (data.vox) {
+                    try { _voxels = _unpackVoxels(data.vox); }
+                    catch (e) { _voxels = null; console.warn('[Collider] vox 復元失敗:', e); }
+                }
                 _ready   = true;
                 console.log(
                     '[Collider] hmap 読み込み完了 — grid:', data.grid,
                     'format:', data.format || 'v1',
-                    'wallmask:', _wallmask ? 'あり' : 'なし'
+                    'wallmask:', _wallmask ? 'あり' : 'なし',
+                    '3Dvox:', _voxels ? 'あり' : 'なし'
                 );
                 if (onDone) onDone(null);
             } catch (e) {
@@ -435,7 +648,7 @@ window.Collider = (function () {
             if (!_ready || !_bounds || !_hmap) return null;
             var b = _bounds;
             return {
-                format: 'vr-naiken-hmap-v2',   // v2: wallmask 追加
+                format: 'vr-naiken-hmap-v3',   // v3: vox（3D占有ビット）追加 / v2: wallmask
                 grid:   GRID,
                 bounds: {
                     minX: b.minX, maxX: b.maxX,
@@ -446,6 +659,9 @@ window.Collider = (function () {
                 hmap:     Array.from(_hmap),
                 ceilmap:  _ceilmap  ? Array.from(_ceilmap)  : null,
                 wallmask: _wallmask ? Array.from(_wallmask) : null,
+                // 3D カプセル判定用の占有ボクセル（base64 bitpacked GRID^3）。
+                // これによりビューアでも段差・薄壁・すり抜けを 3D で判定できる。
+                vox:      _voxels   ? _packVoxels(_voxels)  : null,
             };
         },
 
@@ -527,7 +743,9 @@ window.Collider = (function () {
                 // - opacity (PLY のみ): logit 値、sigmoid > 0.1 ⇔ raw > -2.197
                 var hasScale = (s0o >= 0 && s1o >= 0 && s2o >= 0);
                 var hasOpa   = (opao >= 0);
-                var OPACITY_THRESH = -2.2;   // 透明度 < 0.1 のガウシアンは無視
+                // Phase 3a: ガラス・薄い半透明面を拾うため閾値を緩和（-3.5 ≒ 不透明度 2.9%）。
+                // 増えるノイズは連結成分フィルタとロバスト bbox で除去する。
+                var OPACITY_THRESH = -3.5;   // これ未満（ほぼ透明）のみ無視
                 var MAX_RADIUS_M   = 0.20;   // スタンプ半径の上限 (m)。これより大きい
                                              // ガウシアンは sky/floater の可能性が高い
 
@@ -654,9 +872,15 @@ window.Collider = (function () {
                         return HIST_BUCKETS - 1;
                     }
 
-                    var loX = pct(histX, n, ROBUST_LOW), hiX = pct(histX, n, ROBUST_HIGH);
-                    var loY = pct(histY, n, ROBUST_LOW), hiY = pct(histY, n, ROBUST_HIGH);
-                    var loZ = pct(histZ, n, ROBUST_LOW), hiZ = pct(histZ, n, ROBUST_HIGH);
+                    // パーセンタイルの分母は「不透明度フィルタで残った点数」を使う。
+                    // 全点数 n を使うと、除外分だけ高位パーセンタイルがヒストグラム総和を超え、
+                    // 上側トリミングが無効化されてフローターで bbox が膨張する（キッチンで発覚）。
+                    var keptN = 0;
+                    for (var kb = 0; kb < HIST_BUCKETS; kb++) keptN += histX[kb];
+                    if (keptN < 1) keptN = 1;
+                    var loX = pct(histX, keptN, ROBUST_LOW), hiX = pct(histX, keptN, ROBUST_HIGH);
+                    var loY = pct(histY, keptN, ROBUST_LOW), hiY = pct(histY, keptN, ROBUST_HIGH);
+                    var loZ = pct(histZ, keptN, ROBUST_LOW), hiZ = pct(histZ, keptN, ROBUST_HIGH);
 
                     minX = rawMinX + loX       / HIST_BUCKETS * rangeX;
                     maxX = rawMinX + (hiX + 1) / HIST_BUCKETS * rangeX;
@@ -672,6 +896,10 @@ window.Collider = (function () {
                     var sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
                     _bounds = { minX:minX, maxX:maxX, minY:minY, maxY:maxY,
                                 minZ:minZ, maxZ:maxZ, sx:sx, sy:sy, sz:sz };
+                    // Phase 2: シーンの最大辺が ~TARGET_VOXEL_M になる解像度を選ぶ（[GRID_MIN,GRID_MAX] にクランプ）
+                    var maxDim = Math.max(sx, sy, sz);
+                    _setGrid(Math.max(GRID_MIN, Math.min(GRID_MAX, Math.round(maxDim / TARGET_VOXEL_M))));
+                    console.log('[Collider] adaptive grid =', GRID, '(maxDim=' + maxDim.toFixed(2) + 'm, ~' + (maxDim / GRID * 100).toFixed(1) + 'cm/voxel)');
                     _voxels = new Uint16Array(GRID * GRID * GRID);  // 占有 → 点数カウント
 
                     // ヒストグラムは不要になったので解放
@@ -798,19 +1026,41 @@ window.Collider = (function () {
                         nextLabel++;
                     }
 
+                    // Phase 3b: 各ラベルの bbox を計算（薄い平面シート＝ガラス/間仕切りを保護する）
+                    var lbMinX = new Int16Array(nextLabel), lbMaxX = new Int16Array(nextLabel);
+                    var lbMinY = new Int16Array(nextLabel), lbMaxY = new Int16Array(nextLabel);
+                    var lbMinZ = new Int16Array(nextLabel), lbMaxZ = new Int16Array(nextLabel);
+                    for (var L0 = 0; L0 < nextLabel; L0++) {
+                        lbMinX[L0] = GRID; lbMinY[L0] = GRID; lbMinZ[L0] = GRID;
+                        lbMaxX[L0] = -1;   lbMaxY[L0] = -1;   lbMaxZ[L0] = -1;
+                    }
+                    for (var p2 = 0; p2 < GRID3; p2++) {
+                        var Lp = labels[p2];
+                        if (!Lp) continue;
+                        var px = p2 % GRID, pr = (p2 - px) / GRID, py = pr % GRID, pz = (pr - py) / GRID;
+                        if (px < lbMinX[Lp]) lbMinX[Lp] = px; if (px > lbMaxX[Lp]) lbMaxX[Lp] = px;
+                        if (py < lbMinY[Lp]) lbMinY[Lp] = py; if (py > lbMaxY[Lp]) lbMaxY[Lp] = py;
+                        if (pz < lbMinZ[Lp]) lbMinZ[Lp] = pz; if (pz > lbMaxZ[Lp]) lbMaxZ[Lp] = pz;
+                    }
+
                     // クラスタサイズしきい値: 最大の MIN_CLUSTER_RATIO 以下 or MIN_CLUSTER_VOXELS 未満は削除
                     // ただし最大クラスタは常に残す（極端に小さなシーンで全て消えるのを防ぐ）
                     var threshold = Math.max(MIN_CLUSTER_VOXELS, Math.round(maxSize * MIN_CLUSTER_RATIO));
                     if (threshold > maxSize) threshold = maxSize;
+                    // 薄い平面シート（ガラス screen/薄壁）の判定: 最薄辺 ≤ THIN_MAX かつ 中辺 ≥ PLANAR_MIN
+                    var THIN_MAX = 4, PLANAR_MIN = 14, PLANAR_MIN_VOXELS = 80;
                     var keptLabels = new Uint8Array(nextLabel);
                     var keptCount  = 0;
                     var keptVoxels = 0;
+                    var planarKept = 0;
                     for (var L = 1; L < nextLabel; L++) {
-                        if (sizes[L] >= threshold) {
-                            keptLabels[L] = 1;
-                            keptCount++;
-                            keptVoxels += sizes[L];
+                        var keep = sizes[L] >= threshold;
+                        if (!keep && sizes[L] >= PLANAR_MIN_VOXELS) {
+                            var d = [lbMaxX[L] - lbMinX[L] + 1, lbMaxY[L] - lbMinY[L] + 1, lbMaxZ[L] - lbMinZ[L] + 1]
+                                .sort(function (a, b) { return a - b; });
+                            if (d[0] <= THIN_MAX && d[1] >= PLANAR_MIN) { keep = true; planarKept++; }
                         }
+                        if (keep) { keptLabels[L] = 1; keptCount++; keptVoxels += sizes[L]; }
                     }
 
                     // フィルタ適用: 残すクラスタの voxel だけ solid に残す
@@ -820,7 +1070,7 @@ window.Collider = (function () {
 
                     console.log(
                         '[Collider] CC filter — clusters:', nextLabel - 1,
-                        '/ kept:', keptCount,
+                        '/ kept:', keptCount, '(planar sheets:', planarKept + ')',
                         '/ threshold:', threshold,
                         '/ kept voxels:', keptVoxels, '/', solidCount
                     );
@@ -866,6 +1116,31 @@ window.Collider = (function () {
                         );
                         setTimeout(hmapStep, 0);
                         return;
+                    }
+
+                    // Phase 5b: 床マップの小さな穴を近傍から補間して埋める。
+                    // porous な床で NaN になった「内側」のセルを壁扱いすると、
+                    // 狭い通路が塞がって通れなくなる。周囲が床のセルは床とみなす。
+                    // 過半数(5/8以上)が床のセルだけ埋めるので、外側の広い NaN は残る。
+                    for (var fpass = 0; fpass < 2; fpass++) {
+                        var fsrc = new Float32Array(_hmap);
+                        for (var hz = 0; hz < GRID; hz++) {
+                            for (var hx = 0; hx < GRID; hx++) {
+                                var hi0 = hx + hz * GRID;
+                                if (!isNaN(fsrc[hi0])) continue;
+                                var fsum = 0, fcnt = 0;
+                                for (var oz = -1; oz <= 1; oz++) {
+                                    for (var ox = -1; ox <= 1; ox++) {
+                                        if (ox === 0 && oz === 0) continue;
+                                        var nnx = hx + ox, nnz = hz + oz;
+                                        if (nnx < 0 || nnz < 0 || nnx >= GRID || nnz >= GRID) continue;
+                                        var nnv = fsrc[nnx + nnz * GRID];
+                                        if (!isNaN(nnv)) { fsum += nnv; fcnt++; }
+                                    }
+                                }
+                                if (fcnt >= 5) _hmap[hi0] = fsum / fcnt;
+                            }
+                        }
                     }
 
                     // Phase 6: XZ 壁マスクを構築（.hmap.json に保存する用）
@@ -948,7 +1223,7 @@ window.Collider = (function () {
          * @returns {pc.Vec3}
          */
         resolvePositionSwept: function (prevPos, newPos, eyeHeight) {
-            if (!_ready || !_enabled) {
+            if (!_enabled || (!_ready && !_manualBoxes.length)) {
                 return new pc.Vec3(newPos.x, newPos.y, newPos.z);
             }
 
@@ -958,6 +1233,8 @@ window.Collider = (function () {
                 stepSize = _svo.meta.voxelResolution * 0.5;
             } else if (_bounds) {
                 stepSize = Math.min(_bounds.sx, _bounds.sz) / (GRID - 1) * 0.5;
+            } else if (_manualBoxes.length) {
+                stepSize = 0.05;   // ボクセル無し（手動箱のみ）でもスイープしてすり抜け防止
             } else {
                 return this.resolvePosition(newPos, eyeHeight);
             }
@@ -971,7 +1248,9 @@ window.Collider = (function () {
             if (moveDistXZ <= stepSize) return this.resolvePosition(newPos, eyeHeight);
 
             var steps = Math.ceil(moveDistXZ / stepSize);
-            if (steps > 16) steps = 16;   // 長距離移動（テレポート相当）は上限
+            // 高速移動でも薄壁を貫通しないよう分割上限を引き上げる（~0.6m/フレームまで完全スイープ）。
+            // これを超える一括移動はテレポート相当とみなし端点解決（着地は次フレームで押し出し）。
+            if (steps > 64) steps = 64;
 
             var cur = new pc.Vec3();
             var resolved = new pc.Vec3(prevPos.x, prevPos.y, prevPos.z);
@@ -1000,37 +1279,74 @@ window.Collider = (function () {
          */
         resolvePosition: function (pos, eyeHeight) {
             var out = new pc.Vec3(pos.x, pos.y, pos.z);
-            if (!_ready || !_enabled) return out;
+            if (!_enabled) return out;
+            if (!_ready && !_manualBoxes.length) return out;   // 手動箱だけでも判定する
 
             var EYE         = eyeHeight || 1.0;
-            var HEAD        = 0.05;   // 頭部クリアランス (m) — 大きいと天井下で詰まる
-            var WALL_RADIUS = 0.08;   // カメラ円柱半径 (m) — 小さいほど身軽に動ける
+            var HEAD        = 0.05;   // 頭部クリアランス (m)
+            var WALL_RADIUS = 0.04;   // カメラ円柱半径 (m) — 小さいほど壁に寄れる/狭所を通れる
+            var STEP_UP     = 0.30;   // 乗り越えられる段差 (m)。これ以下は「段」、超は「壁」
 
-            // 壁コリジョン（XZ平面）を先に解決
-            var xz = resolveWall(out.x, out.y, out.z, WALL_RADIUS);
-            out.x = xz.x;
-            out.z = xz.z;
+            // ---- 3D カプセル判定（_voxels / SVO / 手動箱 のいずれかがある場合）----
+            if (_svo || (_voxels && _bounds) || _manualBoxes.length) {
+                var feetY = out.y - EYE;
 
-            // 壁補正後の XZ で床・天井を取得
+                // 1) 壁: 足元+段差 〜 頭 の縦帯で XZ 押し出し（段差以下は無視＝登れる）
+                var bandLo = feetY + STEP_UP;
+                var bandHi = out.y + HEAD;
+                if (bandHi < bandLo) bandHi = bandLo;
+                var xz = resolveWallBand(out.x, out.z, WALL_RADIUS, bandLo, bandHi);
+                out.x = xz.x; out.z = xz.z;
+
+                // 2) 床: 足元+段差 以下で最も高い面に乗る（段差・台・多層に対応）
+                var support = supportTopWorld(out.x, out.z, feetY + STEP_UP);
+                var floorRef;
+                if (support !== null) {
+                    floorRef = support;
+                    var standY = support + EYE;
+                    // 床は「下限」のみ（登り／段差の乗り上げは可）。上へは自由に飛べる＝Q/E上昇を妨げない。
+                    // 段を降りるスナップは入れない（自由飛行の上下移動を固定してしまうため）。
+                    if (out.y < standY) out.y = standY;
+                } else {
+                    floorRef = out.y - EYE;
+                }
+
+                // 3) 天井: 頭上の最も低い面。床から立てない高さ差は「家具の天板」とみなし無視
+                var ceil = ceilBottomWorld(out.x, out.z, floorRef + STEP_UP + 0.05);
+                if (ceil !== null && (ceil - floorRef) < (EYE + HEAD)) ceil = null;
+                if (ceil !== null) {
+                    var maxY = ceil - HEAD;
+                    if (out.y > maxY) out.y = maxY;
+                }
+                return out;
+            }
+
+            // ---- 2D フォールバック（旧 .hmap.json: 3D ボクセル無し）----
+            var xz2 = resolveWall(out.x, out.y, out.z, WALL_RADIUS);
+            out.x = xz2.x;
+            out.z = xz2.z;
             var floorY = this.getFloorY(out.x, out.z);
             var ceilY  = this.getCeilY(out.x, out.z);
-
             if (floorY !== null) {
-                var minY = floorY + EYE;
-                if (out.y < minY) out.y = minY;
+                var mY = floorY + EYE;
+                if (out.y < mY) out.y = mY;
             }
-            // 天井が床から立てない高さしかない場合は「家具の上面」と判定して無視。
-            // 本物の天井ではない場所で頭を押し下げると「がくん」と落下するため。
             if (ceilY !== null && floorY !== null && (ceilY - floorY) < (EYE + HEAD)) {
                 ceilY = null;
             }
             if (ceilY !== null) {
-                var maxY = ceilY - HEAD;
-                if (out.y > maxY) out.y = maxY;
+                var xY = ceilY - HEAD;
+                if (out.y > xY) out.y = xY;
             }
-
             return out;
         },
+
+        // Phase 3c: 手動コリジョン箱（ガラス・鏡）。シーンごとに main.js から設定する。
+        // boxes: [[minX,minY,minZ,maxX,maxY,maxZ], ...]（ワールド座標）
+        setManualBoxes: function (boxes) {
+            _manualBoxes = Array.isArray(boxes) ? boxes.slice() : [];
+        },
+        getManualBoxes: function () { return _manualBoxes.slice(); },
 
         reset: function () {
             _ready    = false;
@@ -1040,6 +1356,7 @@ window.Collider = (function () {
             _wallmask = null;
             _bounds   = null;
             _svo      = null;
+            // _manualBoxes はシーン .json 由来のため main.js が管理（ここでは消さない）
         },
     };
 }());

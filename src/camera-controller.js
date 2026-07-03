@@ -426,6 +426,12 @@ window.CameraController = (function () {
       };
     },
 
+    /** カメラの前方ベクトル（管理ツールの手動コリジョン箱の配置に使用） */
+    getForward: function () {
+      var f = getForward();
+      return { x: f.x, y: f.y, z: f.z };
+    },
+
     /** モバイル上下ボタンから呼ぶ (-1=下降 / 0=停止 / 1=上昇) */
     setVertical: function (v) {
       _mobileVertical = v;

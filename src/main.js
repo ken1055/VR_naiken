@@ -88,6 +88,9 @@
         canvas.style.touchAction = 'none';
         app.start();
 
+        // 管理ツールがコリジョン箱の可視化などに使う
+        window._vrApp = app;
+
         window.addEventListener('resize', function () { app.resizeCanvas(); });
 
         // カメラ
@@ -265,6 +268,9 @@
                 _tryLoadCompanionVoxel(sourceURL);
                 _tryLoadCompanionHmap(sourceURL);
             } else {
+                // 単一ファイル読み込み（コンパニオン無し）: 前シーンのコリジョン/箱を持ち越さない
+                if (window.Collider) Collider.reset();
+                _applyColliderBoxes(null);
                 _applyPendingTeleportState();
             }
             _updateAdminCurrentJSON(asset.name, sourceURL);
@@ -390,11 +396,15 @@
             .then(function (config) {
                 var initialView = (config && config.initialView) || null;
                 var teleports   = (config && config.teleports)   || [];
-                if (initialView && window.CameraController) {
+                if (initialView) {
                     var yaw   = initialView.yaw   || 0;
                     var pitch = initialView.pitch || 0;
-                    var c = PanoRenderer.getCenter();
-                    CameraController.teleport(c.x, c.y, c.z, yaw, pitch);
+                    // 実際の見回しは PanoRenderer が担う（PlayCanvas カメラは背後で不可視）
+                    if (window.PanoRenderer) PanoRenderer.setView(yaw, pitch);
+                    if (window.CameraController) {
+                        var c = PanoRenderer.getCenter();
+                        CameraController.teleport(c.x, c.y, c.z, yaw, pitch);
+                    }
                 }
                 if (teleports.length) Teleporter.load(teleports, _onTeleport);
                 if (window._adminSetInitialCamera) window._adminSetInitialCamera(initialView);
@@ -476,11 +486,13 @@
                     if (teleports.length) Teleporter.load(teleports, _onTeleport);
                     if (window._adminSetInitialCamera) window._adminSetInitialCamera(initialCam);
                     if (window._adminSetTeleports)     window._adminSetTeleports(teleports);
+                    _applyColliderBoxes(config);
                 };
             } else {
                 // JSON ファイル自体がない → 前シーンの値が残らないようリセット
                 if (window._adminSetInitialCamera) window._adminSetInitialCamera(null);
                 if (window._adminSetTeleports)     window._adminSetTeleports([]);
+                _applyColliderBoxes(null);
             }
             _applyPendingTeleportState();
 
@@ -548,9 +560,12 @@
                             teleports   = config.teleports   || [];
                         }
                     } catch (e) {}
-                    if (initialView && window.CameraController) {
-                        var c = PanoRenderer.getCenter();
-                        CameraController.teleport(c.x, c.y, c.z, initialView.yaw || 0, initialView.pitch || 0);
+                    if (initialView) {
+                        if (window.PanoRenderer) PanoRenderer.setView(initialView.yaw || 0, initialView.pitch || 0);
+                        if (window.CameraController) {
+                            var c = PanoRenderer.getCenter();
+                            CameraController.teleport(c.x, c.y, c.z, initialView.yaw || 0, initialView.pitch || 0);
+                        }
                     }
                     if (teleports.length) Teleporter.load(teleports, _onTeleport);
                     if (window._adminSetInitialCamera) window._adminSetInitialCamera(initialView);
@@ -633,10 +648,17 @@
     // ---- コンパニオン JSON から初期カメラを適用 ----
     // scene.ply と同じ場所にある scene.json を取得する
     // ファイルが存在しない場合は何もしない（エラーは無視）
+    // 手動コリジョン箱（ガラス/鏡）をシーン .json から Collider と管理UIへ反映
+    function _applyColliderBoxes(config) {
+        var boxes = (config && config.colliderBoxes) || [];
+        if (window.Collider && Collider.setManualBoxes) Collider.setManualBoxes(boxes);
+        if (window._adminSetBoxes) window._adminSetBoxes(boxes);
+    }
+
     function _applyCompanionJSON(url) {
         var base    = url.split('?')[0];
         var jsonURL = base.replace(/\.(ply|splat)$/i, '.json');
-        if (jsonURL === base) { _applyPendingTeleportState(); return; }
+        if (jsonURL === base) { _applyColliderBoxes(null); _applyPendingTeleportState(); return; }
 
         fetch(jsonURL, { cache: 'no-store' })
             .then(function (res) { return res.ok ? res.json() : null; })
@@ -653,11 +675,13 @@
                 // 管理者状態は常に同期する（前シーンの値が残らないように）
                 if (window._adminSetInitialCamera) window._adminSetInitialCamera(initialCam);
                 if (window._adminSetTeleports)     window._adminSetTeleports(teleports);
+                _applyColliderBoxes(config);
                 _applyPendingTeleportState();
             })
             .catch(function () {
                 if (window._adminSetInitialCamera) window._adminSetInitialCamera(null);
                 if (window._adminSetTeleports)     window._adminSetTeleports([]);
+                _applyColliderBoxes(null);
                 _applyPendingTeleportState();
             });
     }
@@ -673,7 +697,12 @@
         if (_pendingTeleportCamera) {
             var c = _pendingTeleportCamera;
             _pendingTeleportCamera = null;
-            CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
+            if (_isCurrentlyPano && window.PanoRenderer) {
+                // パノラマ表示中は見回しをビューアに反映（位置は固定）
+                PanoRenderer.setView(c.yaw || 0, c.pitch || 0);
+            } else {
+                CameraController.teleport(c.x || 0, c.y || 0, c.z || 0, c.yaw || 0, c.pitch || 0);
+            }
         }
         UI.hideFade();
     }
