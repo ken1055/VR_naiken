@@ -1294,6 +1294,16 @@ window.Collider = (function () {
                 // 1) 壁: 足元+段差 〜 頭 の縦帯で XZ 押し出し（段差以下は無視＝登れる）
                 var bandLo = feetY + STEP_UP;
                 var bandHi = out.y + HEAD;
+                // 天井（頭上の水平面）は「壁」ではない。頭を天井へ突き上げるフレームでは
+                // band 上端 (out.y+HEAD) が天井ボクセルに達し、それを真上の「壁」と誤認して
+                // 真横へ押し出される。天井は部屋全面が solid なので押し出しが止まらず、
+                // 壁の隙間から部屋の外へ滑り出るバグになる。band 上端を天井の直下へ抑え、
+                // 天井ボクセルを壁判定に含めない（縦方向の当たりは後段の 3) でクランプ）。
+                // 家具の天板など（立てない高さ）は本物の天井ではないので cap しない。
+                var ceilCap = ceilBottomWorld(out.x, out.z, feetY + STEP_UP + 0.05);
+                if (ceilCap !== null && (ceilCap - feetY) >= (EYE + HEAD)) {
+                    bandHi = Math.min(bandHi, ceilCap - 0.001);
+                }
                 if (bandHi < bandLo) bandHi = bandLo;
                 var xz = resolveWallBand(out.x, out.z, WALL_RADIUS, bandLo, bandHi);
                 out.x = xz.x; out.z = xz.z;
