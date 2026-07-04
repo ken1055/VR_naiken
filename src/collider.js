@@ -164,7 +164,13 @@ window.Collider = (function () {
     function resolveWall(wx, wy, wz, radius) {
         // 腰の高さでチェック（目線から 0.5m 下）
         var checkY = wy - 0.5;
-        var pushX = 0, pushZ = 0;
+        // resolveWallBand と同じく、押し出しは合算せず各軸の正負最大値のみ採用する
+        //（合算は重なった列の数だけ過剰に押してしまい、壁際の跳ね返り・ガタつきになる）
+        var pushXPos = 0, pushXNeg = 0, pushZPos = 0, pushZNeg = 0;
+        function addPush(px, pz) {
+            if (px > pushXPos) pushXPos = px; else if (px < pushXNeg) pushXNeg = px;
+            if (pz > pushZPos) pushZPos = pz; else if (pz < pushZNeg) pushZNeg = pz;
+        }
 
         if (_svo) {
             var meta    = _svo.meta;
@@ -192,8 +198,8 @@ window.Collider = (function () {
                     var dist = Math.sqrt(dx * dx + dz * dz);
                     var ov = radius - dist;
                     if (ov > 0) {
-                        if (dist < 1e-4) { pushX += radius; }
-                        else { pushX += (dx / dist) * ov; pushZ += (dz / dist) * ov; }
+                        if (dist < 1e-4) addPush(radius, 0);
+                        else addPush((dx / dist) * ov, (dz / dist) * ov);
                     }
                 }
             }
@@ -240,12 +246,15 @@ window.Collider = (function () {
                     var dist2 = Math.sqrt(dx2 * dx2 + dz2 * dz2);
                     var ov2 = radius - dist2;
                     if (ov2 > 0) {
-                        if (dist2 < 1e-4) { pushX += radius; }
-                        else { pushX += (dx2 / dist2) * ov2; pushZ += (dz2 / dist2) * ov2; }
+                        if (dist2 < 1e-4) addPush(radius, 0);
+                        else addPush((dx2 / dist2) * ov2, (dz2 / dist2) * ov2);
                     }
                 }
             }
         }
+
+        var pushX = pushXPos + pushXNeg;
+        var pushZ = pushZPos + pushZNeg;
 
         // 安全弁: 1回の押し出し量を制限（不完全なコライダーでの吹き飛ばし防止）
         var plen0 = Math.sqrt(pushX * pushX + pushZ * pushZ);
@@ -276,7 +285,16 @@ window.Collider = (function () {
     // 単層ではなく「足元+段差〜頭」の帯で見るので、薄壁を高さに関係なく捕捉できる。
     // _voxels（生成直後 / 新 hmap の 3D 復元）と SVO の両方に対応。
     function resolveWallBand(wx, wz, radius, bandLoY, bandHiY) {
-        var pushX = 0, pushZ = 0;
+        // 押し出しの集計は「合算」ではなく各軸の正負それぞれ最大値を採る。
+        // 平面壁では半径内の多数のボクセル列が同方向に重なって働くため、合算すると
+        // 実際に必要な量の数倍を一気に押してしまい、壁際で跳ね返り・ガタつきになる
+        // （半径 0.20 では十数列が重なり顕著）。最深部 1 列分＝ちょうど必要な量だけ押す。
+        // 入隅は直交 2 面がそれぞれの軸の最大を占めるので両軸とも正しく解決される。
+        var pushXPos = 0, pushXNeg = 0, pushZPos = 0, pushZNeg = 0;
+        function addPush(px, pz) {
+            if (px > pushXPos) pushXPos = px; else if (px < pushXNeg) pushXNeg = px;
+            if (pz > pushZPos) pushZPos = pz; else if (pz < pushZNeg) pushZNeg = pz;
+        }
 
         if (_svo) {
             var meta = _svo.meta, res = meta.voxelResolution;
@@ -305,8 +323,8 @@ window.Collider = (function () {
                     var dist = Math.sqrt(ddx * ddx + ddz * ddz);
                     var ov = radius - dist;
                     if (ov > 0) {
-                        if (dist < 1e-4) pushX += radius;
-                        else { pushX += (ddx / dist) * ov; pushZ += (ddz / dist) * ov; }
+                        if (dist < 1e-4) addPush(radius, 0);
+                        else addPush((ddx / dist) * ov, (ddz / dist) * ov);
                     }
                 }
             }
@@ -333,8 +351,8 @@ window.Collider = (function () {
                     var dist2 = Math.sqrt(gx * gx + gz * gz);
                     var ov2 = radius - dist2;
                     if (ov2 > 0) {
-                        if (dist2 < 1e-4) pushX += radius;
-                        else { pushX += (gx / dist2) * ov2; pushZ += (gz / dist2) * ov2; }
+                        if (dist2 < 1e-4) addPush(radius, 0);
+                        else addPush((gx / dist2) * ov2, (gz / dist2) * ov2);
                     }
                 }
             }
@@ -350,10 +368,13 @@ window.Collider = (function () {
             var bdist = Math.sqrt(bdx * bdx + bdz * bdz);
             var bov = radius - bdist;
             if (bov > 0) {
-                if (bdist < 1e-4) pushX += radius;
-                else { pushX += (bdx / bdist) * bov; pushZ += (bdz / bdist) * bov; }
+                if (bdist < 1e-4) addPush(radius, 0);
+                else addPush((bdx / bdist) * bov, (bdz / bdist) * bov);
             }
         }
+
+        var pushX = pushXPos + pushXNeg;
+        var pushZ = pushZPos + pushZNeg;
 
         // 安全弁: 1回の押し出し量を上限で制限する。壁だらけの不完全なコライダーでも
         // カメラが部屋の外へ「吹き飛ばされる」のを防ぐ（スイープで徐々に解決される）。
