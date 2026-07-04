@@ -32,6 +32,12 @@ window.CameraController = (function () {
   var _walkMode  = false;
   var _eyeHeight = 1.6;   // 床からの目線高さ (m)
 
+  // 読込/テレポート直後に、床追従・壁補正後の位置へ一度だけ即スナップするためのフラグ。
+  // これが無いと初期位置から床追従の高さへレート制限で滑って動き「ワープ」に見える。
+  // 初期カメラ適用とコライダー読込は非同期で順序が前後するため、teleport()（カメラ側）と
+  // コライダー読込完了（main.js の requestSettle）の両方から要求する。
+  var _settleRequested = false;
+
   // スムージング係数（フレームレート非依存 exponential decay）
   var SMOOTH_POS = 12;
   var SMOOTH_ROT = 16;
@@ -387,17 +393,26 @@ window.CameraController = (function () {
         // XZ: 壁補正は即時適用
         _targetPos.x = resolved.x;
         _targetPos.z = resolved.z;
-        // Y: 壁付近で床高さマップが誤った大きな値を返す場合に急上昇するのを防ぐ
-        // 上方向は最大 3m/s、下方向は 6m/s でクランプ（家具の上端などで瞬間的に頭が
-        // 押し下げられた際の「がくん」を防ぎつつ、階段降りはほぼ即時に追従させる）
-        var maxUpPerFrame   = 3.0 * dt;
-        var maxDownPerFrame = 6.0 * dt;
-        if (resolved.y > _targetPos.y) {
-          _targetPos.y = Math.min(resolved.y, _targetPos.y + maxUpPerFrame);
-        } else if (resolved.y < _targetPos.y) {
-          _targetPos.y = Math.max(resolved.y, _targetPos.y - maxDownPerFrame);
-        } else {
+        if (_settleRequested) {
+          // 読込/テレポート直後の最初の解決: 床追従・壁補正後の位置へ即スナップ。
+          // レート制限で滑らせると初期位置から「ワープ」して見えるため、ここだけは
+          // 瞬時に確定させ、表示位置(_pos)も一致させて動きを見せない。
           _targetPos.y = resolved.y;
+          _pos.copy(_targetPos);
+          _settleRequested = false;
+        } else {
+          // Y: 壁付近で床高さマップが誤った大きな値を返す場合に急上昇するのを防ぐ
+          // 上方向は最大 3m/s、下方向は 6m/s でクランプ（家具の上端などで瞬間的に頭が
+          // 押し下げられた際の「がくん」を防ぎつつ、階段降りはほぼ即時に追従させる）
+          var maxUpPerFrame   = 3.0 * dt;
+          var maxDownPerFrame = 6.0 * dt;
+          if (resolved.y > _targetPos.y) {
+            _targetPos.y = Math.min(resolved.y, _targetPos.y + maxUpPerFrame);
+          } else if (resolved.y < _targetPos.y) {
+            _targetPos.y = Math.max(resolved.y, _targetPos.y - maxDownPerFrame);
+          } else {
+            _targetPos.y = resolved.y;
+          }
         }
         _prevResolvedPos.copy(_targetPos);
       } else {
@@ -477,6 +492,8 @@ window.CameraController = (function () {
       // initialCamera 適用やテレポート到着時の配置に使われるため、常にここが戻り先になる。
       _home.x = x; _home.y = y; _home.z = z;
       _home.yaw = yaw || 0; _home.pitch = pitch || 0;
+      // 次のコライダー解決で床追従・壁補正後の位置へ即スナップする（滑らせない）
+      _settleRequested = true;
     },
 
     /** 記録済みのホーム姿勢（初期位置）へ即時に戻す */
@@ -504,6 +521,13 @@ window.CameraController = (function () {
     /** 床からの目線高さ (m) を設定（ウォークモード時の固定高さ） */
     setEyeHeight: function (h) { if (h > 0) _eyeHeight = h; },
     getEyeHeight: function () { return _eyeHeight; },
+
+    /**
+     * 次のコライダー解決で、床追従・壁補正後の位置へ即スナップさせる。
+     * コライダーが初期カメラ適用より後に読み込まれた場合の「ワープ」防止に、
+     * main.js のコライダー読込完了時から呼ぶ。
+     */
+    requestSettle: function () { _settleRequested = true; },
 
     /**
      * パノラマモード: 位置を center に固定し、回転入力だけ受け付ける

@@ -608,6 +608,11 @@
                         Collider.loadHmapJSON(data, function (err) {
                             if (!err) {
                                 UI.showColliderBtn();
+                                // 初期カメラ適用より後にコライダーが揃った場合、床追従の
+                                // 高さへ即スナップさせて初期位置からのワープを防ぐ
+                                if (window.CameraController && CameraController.requestSettle) {
+                                    CameraController.requestSettle();
+                                }
                                 console.log('[Hmap] コンパニオン適用済み:', hmapUrl);
                             }
                         });
@@ -637,6 +642,11 @@
                         console.warn('[Voxel] コンパニオン読み込み失敗:', err);
                     } else {
                         UI.showColliderBtn();
+                        // 初期カメラ適用より後にコライダーが揃った場合、床追従の
+                        // 高さへ即スナップさせて初期位置からのワープを防ぐ
+                        if (window.CameraController && CameraController.requestSettle) {
+                            CameraController.requestSettle();
+                        }
                         UI.showInfo('splat-transform Voxelコリジョン読み込み完了');
                         console.log('[Voxel] SVO コンパニオン適用済み:', jsonUrl);
                     }
