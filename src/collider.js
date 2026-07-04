@@ -197,9 +197,8 @@ window.Collider = (function () {
                     var dx = wx - nearX, dz = wz - nearZ;
                     var dist = Math.sqrt(dx * dx + dz * dz);
                     var ov = radius - dist;
-                    if (ov > 0) {
-                        if (dist < 1e-4) addPush(radius, 0);
-                        else addPush((dx / dist) * ov, (dz / dist) * ov);
+                    if (ov > 0 && dist >= 1e-4) {
+                        addPush((dx / dist) * ov, (dz / dist) * ov);
                     }
                 }
             }
@@ -245,9 +244,8 @@ window.Collider = (function () {
                     var dx2 = wx - nearX2, dz2 = wz - nearZ2;
                     var dist2 = Math.sqrt(dx2 * dx2 + dz2 * dz2);
                     var ov2 = radius - dist2;
-                    if (ov2 > 0) {
-                        if (dist2 < 1e-4) addPush(radius, 0);
-                        else addPush((dx2 / dist2) * ov2, (dz2 / dist2) * ov2);
+                    if (ov2 > 0 && dist2 >= 1e-4) {
+                        addPush((dx2 / dist2) * ov2, (dz2 / dist2) * ov2);
                     }
                 }
             }
@@ -256,9 +254,9 @@ window.Collider = (function () {
         var pushX = pushXPos + pushXNeg;
         var pushZ = pushZPos + pushZNeg;
 
-        // 安全弁: 1回の押し出し量を制限（不完全なコライダーでの吹き飛ばし防止）
+        // 安全弁: 1回の押し出し量を小さく制限（薄壁を跨いだ放り出しの防止）
         var plen0 = Math.sqrt(pushX * pushX + pushZ * pushZ);
-        if (plen0 > 0.25) { pushX = pushX / plen0 * 0.25; pushZ = pushZ / plen0 * 0.25; }
+        if (plen0 > 0.05) { pushX = pushX / plen0 * 0.05; pushZ = pushZ / plen0 * 0.05; }
 
         return { x: wx + pushX, z: wz + pushZ };
     }
@@ -280,6 +278,43 @@ window.Collider = (function () {
     // ================================================================
     // ワールド座標→ボクセル添字（生成時と同じ floor((w-min)/s*GRID) 規約）
     function _wvx(w, min, s) { return Math.floor((w - min) / s * GRID); }
+
+    // (wx,wz) のカメラ中心が、縦帯 [loY,hiY] 内で solid（壁/家具/手動箱）の中に
+    // 入っているか。押し出し先の検証と、スイープの「中心進入ガード」に使う。
+    function columnBlocked(wx, wz, loY, hiY) {
+        for (var mb = 0; mb < _manualBoxes.length; mb++) {
+            var bx = _manualBoxes[mb];
+            if (hiY < bx[1] || loY > bx[4]) continue;
+            if (wx >= bx[0] && wx <= bx[3] && wz >= bx[2] && wz <= bx[5]) return true;
+        }
+        if (_svo) {
+            var meta = _svo.meta, res = meta.voxelResolution;
+            var gMin = meta.gridBounds.min, gMax = meta.gridBounds.max;
+            var vx = Math.floor((wx - gMin[0]) / res), vz = Math.floor((wz - gMin[2]) / res);
+            var maxVX = Math.ceil((gMax[0] - gMin[0]) / res);
+            var maxVZ = Math.ceil((gMax[2] - gMin[2]) / res);
+            var maxVY = Math.ceil((gMax[1] - gMin[1]) / res);
+            if (vx < 0 || vz < 0 || vx >= maxVX || vz >= maxVZ) return false;
+            var lo = Math.max(0, Math.floor((loY - gMin[1]) / res));
+            var hi = Math.min(maxVY - 1, Math.floor((hiY - gMin[1]) / res));
+            for (var vy = lo; vy <= hi; vy++) {
+                if (isVoxelOccupied_SVO(vx, vy, vz)) return true;
+            }
+            return false;
+        }
+        if (_voxels && _bounds) {
+            var b = _bounds;
+            var ax = _wvx(wx, b.minX, b.sx), az = _wvx(wz, b.minZ, b.sz);
+            if (ax < 0 || az < 0 || ax >= GRID || az >= GRID) return false;
+            var lo2 = Math.max(0, _wvx(loY, b.minY, b.sy));
+            var hi2 = Math.min(GRID - 1, _wvx(hiY, b.minY, b.sy));
+            for (var vy2 = lo2; vy2 <= hi2; vy2++) {
+                if (_voxels[vi(ax, vy2, az)]) return true;
+            }
+            return false;
+        }
+        return false;
+    }
 
     // 体の縦帯 [bandLoY, bandHiY] に重なる占有ボクセルから XZ 押し出しを計算する。
     // 単層ではなく「足元+段差〜頭」の帯で見るので、薄壁を高さに関係なく捕捉できる。
@@ -321,10 +356,11 @@ window.Collider = (function () {
                     var nearZ = Math.max(vMinZ, Math.min(wz, vMinZ + res));
                     var ddx = wx - nearX, ddz = wz - nearZ;
                     var dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                    // dist≈0（中心が solid 内）は押す方向が定まらない。盲目的な +X 押しは
+                    // 壁を貫通して部屋の外へ運ぶため押さない（脱出は進入ガード側が担保）。
                     var ov = radius - dist;
-                    if (ov > 0) {
-                        if (dist < 1e-4) addPush(radius, 0);
-                        else addPush((ddx / dist) * ov, (ddz / dist) * ov);
+                    if (ov > 0 && dist >= 1e-4) {
+                        addPush((ddx / dist) * ov, (ddz / dist) * ov);
                     }
                 }
             }
@@ -350,9 +386,8 @@ window.Collider = (function () {
                     var gx = wx - nearX2, gz = wz - nearZ2;
                     var dist2 = Math.sqrt(gx * gx + gz * gz);
                     var ov2 = radius - dist2;
-                    if (ov2 > 0) {
-                        if (dist2 < 1e-4) addPush(radius, 0);
-                        else addPush((gx / dist2) * ov2, (gz / dist2) * ov2);
+                    if (ov2 > 0 && dist2 >= 1e-4) {
+                        addPush((gx / dist2) * ov2, (gz / dist2) * ov2);
                     }
                 }
             }
@@ -367,20 +402,27 @@ window.Collider = (function () {
             var bdx = wx - bnx, bdz = wz - bnz;
             var bdist = Math.sqrt(bdx * bdx + bdz * bdz);
             var bov = radius - bdist;
-            if (bov > 0) {
-                if (bdist < 1e-4) addPush(radius, 0);
-                else addPush((bdx / bdist) * bov, (bdz / bdist) * bov);
+            if (bov > 0 && bdist >= 1e-4) {
+                addPush((bdx / bdist) * bov, (bdz / bdist) * bov);
             }
         }
 
         var pushX = pushXPos + pushXNeg;
         var pushZ = pushZPos + pushZNeg;
 
-        // 安全弁: 1回の押し出し量を上限で制限する。壁だらけの不完全なコライダーでも
-        // カメラが部屋の外へ「吹き飛ばされる」のを防ぐ（スイープで徐々に解決される）。
+        // 安全弁: 1回の押し出し量を小さく制限する。0.25 のような大きな一括押し出しは
+        // 厚さ1ボクセル（~2.5cm）の壁を1フレームで「跨いで」反対側＝部屋の外へ着地
+        // させてしまう。小刻みに押して数フレームで解決させる（60fps で最大 3m/s 相当）。
         var plen = Math.sqrt(pushX * pushX + pushZ * pushZ);
-        var MAX_PUSH = 0.25;
+        var MAX_PUSH = 0.05;
         if (plen > MAX_PUSH) { pushX = pushX / plen * MAX_PUSH; pushZ = pushZ / plen * MAX_PUSH; }
+
+        // 押し出し先の中心が別の solid 列の中に入るなら、その押し出しは壁を跨ぐ誤爆
+        // （入り組んだ角やノイズ内でのあらぬ方向への押し）なのでキャンセルする。
+        if ((pushX !== 0 || pushZ !== 0) &&
+            columnBlocked(wx + pushX, wz + pushZ, bandLoY, bandHiY)) {
+            pushX = 0; pushZ = 0;
+        }
 
         return { x: wx + pushX, z: wz + pushZ };
     }
@@ -1251,6 +1293,16 @@ window.Collider = (function () {
                 return new pc.Vec3(newPos.x, newPos.y, newPos.z);
             }
 
+            // 中心進入ガード: カメラ中心が solid 列の中へ入る移動を禁止する。
+            // 押し出し半径に頼らず貫通そのものを止める（角の隙間・薄壁対策）。
+            // 開始時点で既に solid 内にいる場合（初期位置がノイズに埋まっている等）は
+            // ガードを外し、脱出のための移動は許可する。
+            var EYE_G = eyeHeight || 1.0;
+            var startBlocked = columnBlocked(
+                prevPos.x, prevPos.z,
+                prevPos.y - EYE_G + 0.30, prevPos.y + 0.05
+            );
+
             // サブステップ単位（ボクセル XZ 幅の半分）を決める
             var stepSize;
             if (_svo) {
@@ -1268,8 +1320,17 @@ window.Collider = (function () {
             var dy = newPos.y - prevPos.y;
             var moveDistXZ = Math.sqrt(dx * dx + dz * dz);
 
-            // 1ステップで収まる短距離移動は通常パスへ
-            if (moveDistXZ <= stepSize) return this.resolvePosition(newPos, eyeHeight);
+            // 1ステップで収まる短距離移動は通常パスへ（進入ガードのみ適用）
+            if (moveDistXZ <= stepSize) {
+                var single = this.resolvePosition(newPos, eyeHeight);
+                if (!startBlocked &&
+                    columnBlocked(single.x, single.z, single.y - EYE_G + 0.30, single.y + 0.05)) {
+                    // 前進すると中心が solid に入る → XZ の前進をキャンセルして解決し直す
+                    return this.resolvePosition(
+                        new pc.Vec3(prevPos.x, newPos.y, prevPos.z), eyeHeight);
+                }
+                return single;
+            }
 
             var steps = Math.ceil(moveDistXZ / stepSize);
             // 高速移動でも薄壁を貫通しないよう分割上限を引き上げる（~0.6m/フレームまで完全スイープ）。
@@ -1290,7 +1351,12 @@ window.Collider = (function () {
                     prevPos.y + dy * t,
                     prevPos.z + dz * t + offsetZ
                 );
-                resolved = this.resolvePosition(cur, eyeHeight);
+                var stepRes = this.resolvePosition(cur, eyeHeight);
+                if (!startBlocked &&
+                    columnBlocked(stepRes.x, stepRes.z, stepRes.y - EYE_G + 0.30, stepRes.y + 0.05)) {
+                    break;   // これ以上進むと中心が solid に入る → 直前の位置で停止
+                }
+                resolved = stepRes;
             }
             return resolved;
         },
@@ -1309,11 +1375,10 @@ window.Collider = (function () {
             var EYE         = eyeHeight || 1.0;
             var HEAD        = 0.05;   // 頭部クリアランス (m)
             // カメラ円柱半径 (m)。半径 R のカメラは幅 2R 未満の隙間を通れない。
-            // 3DGS の壁は厚さ1ボクセルの穴あきシートで、特に角は2枚の壁が繋がりきらず
-            // 対角に数ボクセルの隙間が残る。半径が小さすぎる（点に近い）と、この角の
-            // 隙間にはまり込んで壁をすり抜けてしまう。すり抜けるより「少し引っかかる」
-            // 挙動を優先し、~40cm までの角の隙間を塞ぐ（ドア幅 ~80cm は通れる）。
-            var WALL_RADIUS = 0.20;
+            // 0.20 は家具・ノイズと常時接触して押し出しが連鎖し「部屋の外へ放り出す」
+            // 事故の一因になったため 0.12 に戻す（~24cm の隙間まで塞ぐ）。角のすり抜けは
+            // 半径の大きさではなく「押し出し先の検証 + スイープの中心進入ガード」で防ぐ。
+            var WALL_RADIUS = 0.12;
             var STEP_UP     = 0.30;   // 乗り越えられる段差 (m)。これ以下は「段」、超は「壁」
 
             // ---- 3D カプセル判定（_voxels / SVO / 手動箱 のいずれかがある場合）----
@@ -1321,7 +1386,18 @@ window.Collider = (function () {
                 var feetY = out.y - EYE;
 
                 // 1) 壁: 足元+段差 〜 頭 の縦帯で XZ 押し出し（段差以下は無視＝登れる）
+                // ウォークモードでは帯の下端が「実際の床」より下に沈まないようにする。
+                // 読込直後などカメラ Y が standY より低い過渡状態では feetY 基準の帯が
+                // 床より下に沈み、床ボクセル自体が「壁」として全方向から押してくる
+                // （初期位置で部屋の外へ放り出される主因）。床が検出できたときだけ
+                // 床+STEP_UP まで引き上げる（通常時は同値なので挙動は変わらない）。
                 var bandLo = feetY + STEP_UP;
+                if (_walkMode) {
+                    var support0 = supportTopWorld(out.x, out.z, out.y);
+                    if (support0 !== null && support0 + STEP_UP > bandLo) {
+                        bandLo = support0 + STEP_UP;
+                    }
+                }
                 var bandHi = out.y + HEAD;
                 // 天井（頭上の水平面）は「壁」ではない。頭を天井へ突き上げるフレームでは
                 // band 上端 (out.y+HEAD) が天井ボクセルに達し、それを真上の「壁」と誤認して
@@ -1339,6 +1415,15 @@ window.Collider = (function () {
 
                 // 2) 床: 足元+段差 以下で最も高い面に乗る（段差・台・多層に対応）
                 var support = supportTopWorld(out.x, out.z, feetY + STEP_UP);
+                if (support === null && _walkMode) {
+                    // 読込直後などカメラ Y が低すぎると、足元が床より下に沈み、床が
+                    // 「登れない段差」（足元+STEP_UP より上）扱いになって見つからない。
+                    // 目線より下で最も高い面を探し直し、そこに立つと今より高くなる
+                    //（＝現在は床に埋まっている）場合だけ採用する。上階の張り出しから
+                    // 吹き抜けに出た場合は standY が現在より低くなるので拾わず、高さ維持。
+                    var deep = supportTopWorld(out.x, out.z, out.y);
+                    if (deep !== null && deep + EYE > out.y) support = deep;
+                }
                 var floorRef;
                 if (support !== null) {
                     floorRef = support;
