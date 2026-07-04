@@ -388,6 +388,19 @@ window.CameraController = (function () {
       if (window.Collider && Collider.isReady() && Collider.isEnabled()) {
         // スイープ判定: 前フレーム位置から今の目標位置までをサブステップで補正し、
         // 1フレームの移動量が薄い壁を貫通しないようにする
+        // 読込/テレポート直後の settle 時: 作者が保存した初期カメラの「床からの高さ」を
+        // 目線高さとして採用する。3DGS はシーンごとに縮尺が違うため、固定 1.6m では
+        // 高すぎて頭の帯がドア上の垂れ壁に当たり、部屋に入れないことがある。
+        // 範囲外の値（浮遊視点で保存など）はノイズとみなし現在値を維持する。
+        if (_settleRequested && _walkMode && Collider.getSupportY) {
+          var fy0 = Collider.getSupportY(_targetPos.x, _targetPos.z, _targetPos.y);
+          if (fy0 !== null) {
+            var eh0 = _targetPos.y - fy0;
+            if (eh0 >= 0.8 && eh0 <= 2.4) {
+              _eyeHeight = Math.min(1.8, Math.max(1.0, eh0));
+            }
+          }
+        }
         var eyeH = _walkMode ? _eyeHeight : 1.0;
         var resolved = Collider.resolvePositionSwept(_prevResolvedPos, _targetPos, eyeH);
         // XZ: 壁補正は即時適用

@@ -1267,6 +1267,20 @@ window.Collider = (function () {
             return isNaN(v) ? null : v;   // NaN は未検出
         },
 
+        /**
+         * ワールド XZ で maxY 以下にある最も高い solid 上端（＝その位置で立てる床面）。
+         * getFloorY と違い多層階でも「カメラ直下の床」を返す。目線高さの自動校正に使用。
+         * @returns {number|null}
+         */
+        getSupportY: function (wx, wz, maxY) {
+            if (!_ready) return null;
+            var s = supportTopWorld(wx, wz, maxY);
+            if (s !== null) return s;
+            // 3D ボクセルが無い旧データでは高さマップにフォールバック
+            var f = this.getFloorY(wx, wz);
+            return (f !== null && f <= maxY) ? f : null;
+        },
+
         getCeilY: function (wx, wz) {
             if (!_ready) return null;
             if (_svo) return getCeilY_SVO(wx, wz);
@@ -1374,11 +1388,11 @@ window.Collider = (function () {
 
             var EYE         = eyeHeight || 1.0;
             var HEAD        = 0.05;   // 頭部クリアランス (m)
-            // カメラ円柱半径 (m)。半径 R のカメラは幅 2R 未満の隙間を通れない。
-            // 0.20 は家具・ノイズと常時接触して押し出しが連鎖し「部屋の外へ放り出す」
-            // 事故の一因になったため 0.12 に戻す（~24cm の隙間まで塞ぐ）。角のすり抜けは
-            // 半径の大きさではなく「押し出し先の検証 + スイープの中心進入ガード」で防ぐ。
-            var WALL_RADIUS = 0.12;
+            // カメラ円柱半径 (m)。生成時のガウシアンスタンプで壁は最大 ~7.5cm ずつ
+            // 内側に膨らむため、実際のドア・通路はコライダー上ではかなり狭い。半径が
+            // 大きいと狭い通路を通れなくなるので小さめにする。壁・角のすり抜け防止は
+            // 半径ではなく「押し出し先の検証 + スイープの中心進入ガード」が担う。
+            var WALL_RADIUS = 0.08;
             var STEP_UP     = 0.30;   // 乗り越えられる段差 (m)。これ以下は「段」、超は「壁」
 
             // ---- 3D カプセル判定（_voxels / SVO / 手動箱 のいずれかがある場合）----
