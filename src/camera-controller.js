@@ -27,6 +27,11 @@ window.CameraController = (function () {
   // テレポート到着など、teleport() による権威的な配置のたびに更新される。
   var _home = { x: 0, y: 2, z: 5, yaw: 0, pitch: 0 };
 
+  // ウォークモード: 目線の高さを床に固定して水平移動のみ（閲覧者向け）。
+  // false = 自由飛行（管理ツール向け・従来挙動）。index.html で有効化する。
+  var _walkMode  = false;
+  var _eyeHeight = 1.6;   // 床からの目線高さ (m)
+
   // スムージング係数（フレームレート非依存 exponential decay）
   var SMOOTH_POS = 12;
   var SMOOTH_ROT = 16;
@@ -348,16 +353,28 @@ window.CameraController = (function () {
         return;
       }
 
+      // 移動用の前方ベクトル。ウォークモードでは見上げ/見下げで上下に沈まないよう
+      // 水平成分のみを使う（roll=0 なので right は水平。そこから水平前方を導出する）。
+      var moveFwd = fwd;
+      if (_walkMode) {
+        moveFwd = new pc.Vec3(right.z, 0, -right.x);
+        if (moveFwd.lengthSq() > 1e-8) moveFwd.normalize();
+        else moveFwd = new pc.Vec3(fwd.x, 0, fwd.z).normalize();
+      }
+
       // キー入力 → ターゲット位置を更新
-      if (_keys['KeyW'] || _keys['ArrowUp'])    { _targetPos.add(fwd.clone().scale(spd)); }
-      if (_keys['KeyS'] || _keys['ArrowDown'])   { _targetPos.add(fwd.clone().scale(-spd)); }
+      if (_keys['KeyW'] || _keys['ArrowUp'])    { _targetPos.add(moveFwd.clone().scale(spd)); }
+      if (_keys['KeyS'] || _keys['ArrowDown'])   { _targetPos.add(moveFwd.clone().scale(-spd)); }
       if (_keys['KeyD'] || _keys['ArrowRight'])  { _targetPos.add(right.clone().scale(spd)); }
       if (_keys['KeyA'] || _keys['ArrowLeft'])   { _targetPos.add(right.clone().scale(-spd)); }
-      if (_keys['KeyQ'])       { _targetPos.add(new pc.Vec3(0,  spd, 0)); }
-      if (_keys['KeyE'])       { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
-      if (_mobileVertical !== 0) { _targetPos.add(new pc.Vec3(0, _mobileVertical * spd, 0)); }
+      // 上下移動はウォークモードでは無効（高さは床に固定追従する）
+      if (!_walkMode) {
+        if (_keys['KeyQ'])         { _targetPos.add(new pc.Vec3(0,  spd, 0)); }
+        if (_keys['KeyE'])         { _targetPos.add(new pc.Vec3(0, -spd, 0)); }
+        if (_mobileVertical !== 0) { _targetPos.add(new pc.Vec3(0, _mobileVertical * spd, 0)); }
+      }
       if (_joystickX !== 0 || _joystickY !== 0) {
-        _targetPos.add(fwd.clone().scale(-_joystickY * spd));
+        _targetPos.add(moveFwd.clone().scale(-_joystickY * spd));
         _targetPos.add(right.clone().scale(_joystickX * spd));
       }
 
@@ -365,7 +382,8 @@ window.CameraController = (function () {
       if (window.Collider && Collider.isReady() && Collider.isEnabled()) {
         // スイープ判定: 前フレーム位置から今の目標位置までをサブステップで補正し、
         // 1フレームの移動量が薄い壁を貫通しないようにする
-        var resolved = Collider.resolvePositionSwept(_prevResolvedPos, _targetPos, 1.0);
+        var eyeH = _walkMode ? _eyeHeight : 1.0;
+        var resolved = Collider.resolvePositionSwept(_prevResolvedPos, _targetPos, eyeH);
         // XZ: 壁補正は即時適用
         _targetPos.x = resolved.x;
         _targetPos.z = resolved.z;
@@ -470,6 +488,22 @@ window.CameraController = (function () {
     getHome: function () {
       return { x: _home.x, y: _home.y, z: _home.z, yaw: _home.yaw, pitch: _home.pitch };
     },
+
+    /**
+     * ウォークモード（目線の高さを床に固定し水平移動のみ）の ON/OFF。
+     * Collider と UI にも伝播する。閲覧者(index.html)で ON、管理ツールは OFF のまま。
+     */
+    setWalkMode: function (on) {
+      _walkMode = !!on;
+      if (_walkMode) _mobileVertical = 0;   // 残った上下入力をクリア
+      if (window.Collider && Collider.setWalkMode) Collider.setWalkMode(_walkMode);
+      if (window.UI && UI.setWalkMode) UI.setWalkMode(_walkMode);
+    },
+    isWalkMode: function () { return _walkMode; },
+
+    /** 床からの目線高さ (m) を設定（ウォークモード時の固定高さ） */
+    setEyeHeight: function (h) { if (h > 0) _eyeHeight = h; },
+    getEyeHeight: function () { return _eyeHeight; },
 
     /**
      * パノラマモード: 位置を center に固定し、回転入力だけ受け付ける

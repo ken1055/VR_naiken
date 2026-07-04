@@ -33,6 +33,7 @@ window.Collider = (function () {
 
     var _ready    = false;
     var _enabled  = true;
+    var _walkMode = false;   // ウォークモード: resolvePosition で目線を床に固定追従する（閲覧者向け）
     var _voxels   = null;    // Uint8Array[GRID^3] — buildAsync 中の3D solid mask
     var _hmap     = null;    // Float32Array[GRID^2] — 床高さマップ
     var _bounds   = null;    // { minX,maxX,minY,maxY,minZ,maxZ,sx,sy,sz }
@@ -568,6 +569,8 @@ window.Collider = (function () {
         isReady:   function () { return _ready; },
         isEnabled: function () { return _enabled; },
         setEnabled: function (v) { _enabled = !!v; },
+        isWalkMode: function () { return _walkMode; },
+        setWalkMode: function (v) { _walkMode = !!v; },   // true=床に高さ固定追従
         isSVO:     function () { return !!_svo; },   // splat-transform SVO 使用中か
 
         /**
@@ -1319,9 +1322,15 @@ window.Collider = (function () {
                 if (support !== null) {
                     floorRef = support;
                     var standY = support + EYE;
-                    // 床は「下限」のみ（登り／段差の乗り上げは可）。上へは自由に飛べる＝Q/E上昇を妨げない。
-                    // 段を降りるスナップは入れない（自由飛行の上下移動を固定してしまうため）。
-                    if (out.y < standY) out.y = standY;
+                    if (_walkMode) {
+                        // ウォークモード: 目線を床に固定追従（上下とも standY に合わせる）。
+                        // 段の上り下りは呼び出し側の Y レート制限でなめらかに補間される。
+                        out.y = standY;
+                    } else {
+                        // 自由モード: 床は「下限」のみ（登り／段差の乗り上げは可、上へは自由に飛べる）。
+                        // 段を降りるスナップは入れない（自由飛行の上下移動を固定してしまうため）。
+                        if (out.y < standY) out.y = standY;
+                    }
                 } else {
                     floorRef = out.y - EYE;
                 }
@@ -1344,7 +1353,8 @@ window.Collider = (function () {
             var ceilY  = this.getCeilY(out.x, out.z);
             if (floorY !== null) {
                 var mY = floorY + EYE;
-                if (out.y < mY) out.y = mY;
+                if (_walkMode) out.y = mY;          // ウォークモード: 床に固定追従
+                else if (out.y < mY) out.y = mY;    // 自由モード: 下限のみ
             }
             if (ceilY !== null && floorY !== null && (ceilY - floorY) < (EYE + HEAD)) {
                 ceilY = null;

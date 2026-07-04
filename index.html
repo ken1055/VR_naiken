@@ -58,5 +58,10 @@
 
     <!-- エントリーポイント（最後） -->
     <script src="src/main.js"></script>
+
+    <!-- 閲覧者は目線の高さを床に固定したウォークモード（管理ツール admin.html は自由移動のまま）-->
+    <script>
+        if (window.CameraController) CameraController.setWalkMode(true);
+    </script>
 </body>
 </html>

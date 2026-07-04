@@ -203,6 +203,9 @@ window.UI = (function () {
         'body.pano-mode #vr-move-btns,',
         'body.pano-mode #vr-home-btn,',
         'body.pano-mode #vr-help-overlay { display: none !important; }',
+
+        /* ウォークモード中は上下移動ボタンを隠す（高さは床に固定追従）*/
+        'body.walk-mode #vr-move-btns { display: none !important; }',
     ].join('\n');
 
     var _elLoading     = null;
@@ -477,6 +480,35 @@ window.UI = (function () {
         setPanoMode: function (on) {
             if (on) document.body.classList.add('pano-mode');
             else    document.body.classList.remove('pano-mode');
+        },
+
+        /**
+         * ウォークモード ON/OFF。上下移動ボタンを隠し、操作説明から上下移動の行を除く。
+         */
+        setWalkMode: function (on) {
+            if (on) document.body.classList.add('walk-mode');
+            else    document.body.classList.remove('walk-mode');
+            if (!_elHelpOverlay) return;
+            var touch = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+            var rows;
+            if (touch) {
+                rows = [
+                    '<tr><td>左ジョイスティック</td><td>前後左右移動</td></tr>',
+                    '<tr><td>右エリアドラッグ</td><td>視点回転</td></tr>',
+                ];
+                if (!on) rows.push('<tr><td>↑ / ↓ ボタン</td><td>上昇・下降</td></tr>');
+            } else {
+                rows = [
+                    '<tr><td>左右ドラッグ</td><td>視点回転</td></tr>',
+                    '<tr><td>W / A / S / D</td><td>前後左右移動</td></tr>',
+                ];
+                if (!on) {
+                    rows.push('<tr><td>Q</td><td>上昇</td></tr>');
+                    rows.push('<tr><td>E</td><td>下降</td></tr>');
+                }
+                rows.push('<tr><td>ホイール</td><td>移動速度変更</td></tr>');
+            }
+            _elHelpOverlay.innerHTML = '<table>' + rows.join('') + '</table>';
         },
 
         /**
