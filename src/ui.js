@@ -96,6 +96,21 @@ window.UI = (function () {
         '  background: rgba(0,212,170,0.12);',
         '  border-color: rgba(0,212,170,0.4); color: #00D4AA; }',
 
+        /* 初期位置に戻るボタン（ヘルプボタンの上に重ねて配置）*/
+        '#vr-home-btn {',
+        '  position: fixed; bottom: 60px; right: 20px; z-index: 120;',
+        '  width: 32px; height: 32px; border-radius: 50%;',
+        '  background: rgba(0,4,12,0.9);',
+        '  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);',
+        '  border: 1px solid rgba(0,212,170,0.15);',
+        '  color: rgba(0,212,170,0.55);',
+        '  cursor: pointer; display: flex; align-items: center; justify-content: center;',
+        '  transition: all 0.15s; }',
+        '#vr-home-btn:hover {',
+        '  background: rgba(0,212,170,0.12);',
+        '  border-color: rgba(0,212,170,0.4); color: #00D4AA; }',
+        '#vr-home-btn svg { width: 16px; height: 16px; display: block; }',
+
         /* バーチャルジョイスティック */
         '#vr-joystick-base {',
         '  position: fixed; left: 32px; bottom: 60px; z-index: 120;',
@@ -186,6 +201,7 @@ window.UI = (function () {
         /* パノラマモード中は移動UIを隠す */
         'body.pano-mode #vr-joystick-base,',
         'body.pano-mode #vr-move-btns,',
+        'body.pano-mode #vr-home-btn,',
         'body.pano-mode #vr-help-overlay { display: none !important; }',
     ].join('\n');
 
@@ -273,6 +289,20 @@ window.UI = (function () {
             var helpBtn = el('button', { id: 'vr-help-btn', title: '操作説明', textContent: '?' });
             helpBtn.addEventListener('click', showHelp);
             root.appendChild(helpBtn);
+
+            // 初期位置に戻るボタン（家アイコン）
+            var homeBtn = el('button', { id: 'vr-home-btn', title: '初期位置に戻る',
+                innerHTML: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+                    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                    '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+                    '<polyline points="9 22 9 12 15 12 15 22"/></svg>' });
+            homeBtn.addEventListener('click', function () {
+                if (window.CameraController && CameraController.resetToHome) {
+                    CameraController.resetToHome();
+                    if (window.UI && UI.showInfo) UI.showInfo('初期位置に戻りました');
+                }
+            });
+            root.appendChild(homeBtn);
 
             // スマホのみ: バーチャルジョイスティック + 上下ボタン
             if (_isTouchDevice) {

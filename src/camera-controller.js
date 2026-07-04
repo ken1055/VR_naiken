@@ -23,6 +23,10 @@ window.CameraController = (function () {
   // オービット用注視点
   var _orbitTarget = new pc.Vec3(0, 0, 0);
 
+  // 「初期位置に戻る」用のホーム姿勢。シーン読込時の initialCamera 適用や
+  // テレポート到着など、teleport() による権威的な配置のたびに更新される。
+  var _home = { x: 0, y: 2, z: 5, yaw: 0, pitch: 0 };
+
   // スムージング係数（フレームレート非依存 exponential decay）
   var SMOOTH_POS = 12;
   var SMOOTH_ROT = 16;
@@ -285,6 +289,7 @@ window.CameraController = (function () {
       _targetPos.set(0, 2, 5);  _pos.set(0, 2, 5);
       _targetYaw   = 0;         _yaw   = 0;
       _targetPitch = 0;         _pitch = 0;
+      _home = { x: 0, y: 2, z: 5, yaw: 0, pitch: 0 };
       applyTransform();
 
       var canvas = app.graphicsDevice.canvas;
@@ -450,6 +455,20 @@ window.CameraController = (function () {
       _targetYaw   = yaw   || 0; _yaw   = yaw   || 0;
       _targetPitch = pitch || 0; _pitch = pitch || 0;
       applyTransform();
+      // この姿勢を「初期位置」として記録する。teleport はシーン読込時の
+      // initialCamera 適用やテレポート到着時の配置に使われるため、常にここが戻り先になる。
+      _home.x = x; _home.y = y; _home.z = z;
+      _home.yaw = yaw || 0; _home.pitch = pitch || 0;
+    },
+
+    /** 記録済みのホーム姿勢（初期位置）へ即時に戻す */
+    resetToHome: function () {
+      this.teleport(_home.x, _home.y, _home.z, _home.yaw, _home.pitch);
+    },
+
+    /** 現在のホーム姿勢（初期位置）を取得 */
+    getHome: function () {
+      return { x: _home.x, y: _home.y, z: _home.z, yaw: _home.yaw, pitch: _home.pitch };
     },
 
     /**
