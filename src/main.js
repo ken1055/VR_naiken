@@ -212,15 +212,15 @@
             var paramURL   = params.get('url');
             var paramTitle = params.get('title');
 
+            // URLSearchParams.get() はデコード済みの値を返すため再デコードしない
+            // （% を含むファイル名・物件名で URIError になり黙って読み込み失敗する）
             if (paramTitle) {
-                var decoded = decodeURIComponent(paramTitle);
-                document.title = decoded + ' | 3D内見ビューア';
-                UI.setTitle(decoded);
+                document.title = paramTitle + ' | 3D内見ビューア';
+                UI.setTitle(paramTitle);
             }
 
             if (paramURL) {
-                var decodedURL = decodeURIComponent(paramURL);
-                _loadFromURL(decodedURL);
+                _loadFromURL(paramURL);
             }
         } catch (e) {
             console.warn('[Param] URLパラメータの解析に失敗:', e);
