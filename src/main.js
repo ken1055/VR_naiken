@@ -203,6 +203,27 @@
         }
     }
 
+    // ---- ?url= 許可リスト ----
+    // 誰でも ?url= 付きリンクを作れるため、自社ドメイン上で任意コンテンツを
+    // 表示させられないよう読み込み元を制限する。
+    // 管理ツールの URL 入力パネルやテレポート先（管理者作成の JSON 由来）は対象外。
+    var _ALLOWED_URL_PREFIXES = [
+        'https://storage.googleapis.com/vr_naiken_properties/',
+    ];
+    function _isAllowedParamURL(url) {
+        try {
+            var abs = new URL(url, window.location.href);
+            // 同一オリジン（相対 URL・自サイト配下）と開発用 localhost は許可
+            if (abs.origin === window.location.origin) return true;
+            if (abs.hostname === 'localhost' || abs.hostname === '127.0.0.1') return true;
+            return _ALLOWED_URL_PREFIXES.some(function (p) {
+                return abs.href.indexOf(p) === 0;
+            });
+        } catch (e) {
+            return false;
+        }
+    }
+
     // ---- URLパラメータから自動ロード ----
     // 使い方: ?url=https://...property.splat&title=物件名
     function _autoLoadFromParam() {
@@ -220,7 +241,12 @@
             }
 
             if (paramURL) {
-                _loadFromURL(paramURL);
+                if (_isAllowedParamURL(paramURL)) {
+                    _loadFromURL(paramURL);
+                } else {
+                    console.warn('[Param] 許可されていない読み込み元:', paramURL);
+                    UI.showError('この URL からは読み込めません。');
+                }
             }
         } catch (e) {
             console.warn('[Param] URLパラメータの解析に失敗:', e);
