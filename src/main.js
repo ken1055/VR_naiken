@@ -281,6 +281,7 @@
             UI.showError('PlayCanvas が初期化されていません');
             return;
         }
+        var loadStart = Date.now();
         UI.showLoading('読み込み中...');
         promise.then(function (asset) {
             // パノラマモードの解除 (3DGSロード時は必ず通常モードに戻す)
@@ -304,11 +305,19 @@
             UI.hideEmptyState();
             UI.showHelp();
             if (showShare) UI.showShareButton();
+            // KPI 計測（index.html で GA4 有効時のみ送信される。admin では no-op）
+            if (window._track) window._track('scene_loaded', {
+                scene_url: sourceURL || 'local-file',
+                load_ms:   Date.now() - loadStart
+            });
         }).catch(function (err) {
             UI.hideLoading();
             UI.hideFade();
             UI.showError(err.message || String(err));
             console.error(err);
+            if (window._track) window._track('scene_load_error', {
+                scene_url: sourceURL || 'local-file'
+            });
         });
     }
 
@@ -352,6 +361,9 @@
 
     // ---- 360度画像表示 (共通) ----
     function _renderPano(asset, sourceURL, fileName) {
+        if (window._track) window._track('pano_entered', {
+            scene_url: sourceURL || fileName || 'local-file'
+        });
         Teleporter.reset();
         GSplatRenderer.disposeAll();
         PanoRenderer.create(app, asset, { yaw: 0 });
@@ -567,6 +579,7 @@
 
         UI.showLoading('360度画像を読み込み中...');
         PanoRenderer.loadFromFile(app, panoFile).then(function (asset) {
+            if (window._track) window._track('pano_entered', { scene_url: panoFile.name });
             Teleporter.reset();
             GSplatRenderer.disposeAll();
             PanoRenderer.create(app, asset, { yaw: 0 });
@@ -724,6 +737,10 @@
 
     function _onTeleport(point) {
         if (!point || !point.destinationUrl) return;
+        if (window._track) window._track('teleport_used', {
+            destination: point.destinationUrl,
+            label:       point.label || ''
+        });
         _pendingTeleportCamera = point.destinationCamera || null;
         UI.showFade();
         setTimeout(function () { _loadFromURL(point.destinationUrl); }, 400);

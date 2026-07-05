@@ -16,6 +16,32 @@
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
+
+    <!-- GA4 アクセス計測（下の GA4_ID を測定 ID に差し替えると有効化される。
+         管理ツール admin.html には入れないこと — 管理作業で計測を汚さないため） -->
+    <script>
+        (function () {
+            var GA4_ID = 'G-XXXXXXXXXX';  // ← GA4 の測定 ID（G-…）に差し替え
+
+            // main.js から呼ばれるイベント送信ヘルパー。ID 未設定時は no-op。
+            window._track = function () {};
+
+            if (GA4_ID === 'G-XXXXXXXXXX' || !/^G-[A-Z0-9]+$/.test(GA4_ID)) return;
+
+            var s = document.createElement('script');
+            s.async = true;
+            s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA4_ID;
+            document.head.appendChild(s);
+
+            window.dataLayer = window.dataLayer || [];
+            function gtag() { dataLayer.push(arguments); }
+            window.gtag = gtag;
+            gtag('js', new Date());
+            gtag('config', GA4_ID);
+
+            window._track = function (name, params) { gtag('event', name, params || {}); };
+        })();
+    </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
