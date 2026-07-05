@@ -39,6 +39,13 @@
     // ページロードごとにユニークなクエリを付けて新版を確実に取得する。
     var _companionCB = Date.now();
 
+    // ?url= の読み込み元許可リスト。
+    // ※ _autoLoadFromParam は IIFE 実行中に呼ばれるため、この代入は
+    //    呼び出しより前（ファイル先頭近く）に置くこと。
+    var _ALLOWED_URL_PREFIXES = [
+        'https://storage.googleapis.com/vr_naiken_properties/',
+    ];
+
     // 管理者ページから参照: 現在読み込まれているシーンの保存先 JSON ファイル名
     window._adminCurrentJSONName = null;
 
@@ -203,13 +210,10 @@
         }
     }
 
-    // ---- ?url= 許可リスト ----
+    // ---- ?url= 許可リスト判定 ----
     // 誰でも ?url= 付きリンクを作れるため、自社ドメイン上で任意コンテンツを
     // 表示させられないよう読み込み元を制限する。
     // 管理ツールの URL 入力パネルやテレポート先（管理者作成の JSON 由来）は対象外。
-    var _ALLOWED_URL_PREFIXES = [
-        'https://storage.googleapis.com/vr_naiken_properties/',
-    ];
     function _isAllowedParamURL(url) {
         try {
             var abs = new URL(url, window.location.href);
