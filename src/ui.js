@@ -41,11 +41,12 @@ window.UI = (function () {
         '  color: rgba(240,244,248,0.65);',
         '  font-size: 12.5px; max-width: 280px; text-align: center; line-height: 1.6; }',
 
-        /* トースト */
+        /* トースト（場所メニューのボタンと重ならないよう少し下から表示）*/
         '#vr-toast-container {',
-        '  position: fixed; top: 16px; right: 16px; z-index: 300;',
+        '  position: fixed; top: 68px; right: 16px; z-index: 300;',
         '  display: flex; flex-direction: column; gap: 8px; pointer-events: none; }',
-        '.vr-toast {',
+        /* #vr-naiken-ui * リセットに負けないよう親 ID を付ける（padding が効かなくなる）*/
+        '#vr-toast-container .vr-toast {',
         '  padding: 12px 18px; border-radius: 12px;',
         '  background: rgba(220,50,50,0.94);',
         '  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);',
@@ -54,7 +55,7 @@ window.UI = (function () {
         '  font-size: 13px; max-width: 320px; line-height: 1.5;',
         '  box-shadow: 0 8px 32px rgba(0,0,0,0.4);',
         '  animation: vr-ti 0.22s ease, vr-to 0.35s ease 3.65s forwards; }',
-        '.vr-toast--info {',
+        '#vr-toast-container .vr-toast--info {',
         '  background: rgba(0,40,32,0.96);',
         '  border-color: rgba(0,212,170,0.25); color: #00D4AA; }',
         '@keyframes vr-ti { from { opacity:0; transform: translateX(16px); } to { opacity:1; transform: none; } }',
@@ -198,6 +199,46 @@ window.UI = (function () {
         '  background: rgba(0,212,170,0.18); border-color: rgba(0,212,170,0.75); }',
         '#vr-back-btn.hidden { display: none; }',
 
+        /* 場所一覧メニュー（右上ハンバーガー）*/
+        '#vr-places-btn {',
+        '  position: fixed; top: 20px; right: 20px; z-index: 140;',
+        '  width: 40px; height: 40px; border-radius: 12px;',
+        '  background: rgba(0,4,12,0.9);',
+        '  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);',
+        '  border: 1px solid rgba(0,212,170,0.25);',
+        '  color: rgba(0,212,170,0.8); cursor: pointer;',
+        '  display: none; align-items: center; justify-content: center;',
+        '  transition: all 0.15s; }',
+        '#vr-places-btn.visible { display: flex; }',
+        '#vr-places-btn:hover, #vr-places-btn.open {',
+        '  background: rgba(0,212,170,0.12);',
+        '  border-color: rgba(0,212,170,0.5); color: #00D4AA; }',
+        '#vr-places-btn svg { width: 20px; height: 20px; display: block; }',
+
+        '#vr-places-panel {',
+        '  position: fixed; top: 68px; right: 20px; z-index: 140;',
+        '  min-width: 190px; max-width: 280px; max-height: 60vh; overflow-y: auto;',
+        '  padding: 8px; border-radius: 14px;',
+        '  background: rgba(0,4,12,0.94);',
+        '  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);',
+        '  border: 1px solid rgba(0,212,170,0.2);',
+        '  box-shadow: 0 8px 40px rgba(0,0,0,0.5);',
+        '  display: none; flex-direction: column; gap: 2px; }',
+        '#vr-places-panel.open { display: flex; }',
+        '#vr-places-title {',
+        '  padding: 6px 12px 8px; font-size: 10.5px; font-weight: 700;',
+        '  color: rgba(0,212,170,0.55); letter-spacing: 0.5px;',
+        '  font-family: system-ui, sans-serif; }',
+        /* 先頭の #vr-naiken-ui * リセット（ID込みで特異性が高い）に負けないよう ID を付ける */
+        '#vr-places-panel .vr-place-item {',
+        '  padding: 10px 12px; border-radius: 9px; border: none; text-align: left;',
+        '  background: transparent; color: rgba(240,244,248,0.85);',
+        '  font-size: 13px; font-family: system-ui, sans-serif; cursor: pointer;',
+        '  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;',
+        '  transition: background 0.12s, color 0.12s; }',
+        '#vr-places-panel .vr-place-item:hover {',
+        '  background: rgba(0,212,170,0.12); color: #00D4AA; }',
+
         /* パノラマモード中は移動UIを隠す */
         'body.pano-mode #vr-joystick-base,',
         'body.pano-mode #vr-move-btns,',
@@ -221,6 +262,8 @@ window.UI = (function () {
     var _teleportClick    = null;
     var _elBackBtn        = null;
     var _backClick        = null;
+    var _elPlacesBtn      = null;
+    var _elPlacesPanel    = null;
     var _callbacks        = {};
 
     function el(tag, attrs, children) {
@@ -237,6 +280,13 @@ window.UI = (function () {
             node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
         });
         return node;
+    }
+
+    function _togglePlacesPanel(force) {
+        if (!_elPlacesPanel) return;
+        var open = (force !== undefined) ? !!force : !_elPlacesPanel.classList.contains('open');
+        _elPlacesPanel.classList.toggle('open', open);
+        if (_elPlacesBtn) _elPlacesBtn.classList.toggle('open', open);
     }
 
     function showHelp() {
@@ -413,6 +463,27 @@ window.UI = (function () {
             });
             root.appendChild(_elBackBtn);
 
+            // 場所一覧メニュー（テレポートポイントのあるシーンでのみ表示）
+            _elPlacesBtn = el('button', { id: 'vr-places-btn', title: '場所一覧',
+                innerHTML: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+                    'stroke-width="2" stroke-linecap="round">' +
+                    '<line x1="4" y1="6" x2="20" y2="6"/>' +
+                    '<line x1="4" y1="12" x2="20" y2="12"/>' +
+                    '<line x1="4" y1="18" x2="20" y2="18"/></svg>' });
+            _elPlacesPanel = el('div', { id: 'vr-places-panel' });
+            _elPlacesBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                _togglePlacesPanel();
+            });
+            // パネル外タップで閉じる
+            document.addEventListener('pointerdown', function (e) {
+                if (!_elPlacesPanel.classList.contains('open')) return;
+                if (_elPlacesPanel.contains(e.target) || _elPlacesBtn.contains(e.target)) return;
+                _togglePlacesPanel(false);
+            });
+            root.appendChild(_elPlacesBtn);
+            root.appendChild(_elPlacesPanel);
+
             showHelp();
         },
 
@@ -509,6 +580,33 @@ window.UI = (function () {
                 rows.push('<tr><td>ホイール</td><td>移動速度変更</td></tr>');
             }
             _elHelpOverlay.innerHTML = '<table>' + rows.join('') + '</table>';
+        },
+
+        /**
+         * 場所一覧メニュー（右上ハンバーガー）の内容を設定する。
+         * @param {Array|null} points   テレポートポイント配列。空 / null でボタンごと非表示
+         * @param {Function}   onSelect (point) => void 項目選択時に呼ばれる
+         */
+        setPlacesMenu: function (points, onSelect) {
+            if (!_elPlacesBtn || !_elPlacesPanel) return;
+            _togglePlacesPanel(false);
+            _elPlacesPanel.innerHTML = '';
+            if (!points || !points.length) {
+                _elPlacesBtn.classList.remove('visible');
+                return;
+            }
+            _elPlacesPanel.appendChild(
+                el('div', { id: 'vr-places-title', textContent: '場所を選択' }));
+            points.forEach(function (pt, i) {
+                var item = el('button', { className: 'vr-place-item',
+                    textContent: pt.label || ('場所 ' + (i + 1)) });
+                item.addEventListener('click', function () {
+                    _togglePlacesPanel(false);
+                    if (onSelect) onSelect(pt);
+                });
+                _elPlacesPanel.appendChild(item);
+            });
+            _elPlacesBtn.classList.add('visible');
         },
 
         /**

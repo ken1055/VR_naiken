@@ -11,6 +11,25 @@ window.Teleporter = (function () {
     var _activePoint = null;
     var _onActivate  = null;
 
+    // 場所一覧メニューから選択されたとき:
+    // 目的地 URL があれば近接トリガーと同じシーン切替、なければ同一シーン内テレポート
+    function _gotoPoint(pt) {
+        if (!pt) return;
+        if (pt.destinationUrl) {
+            if (_onActivate) _onActivate(pt);
+        } else if (window.CameraController && pt.position) {
+            var st = CameraController.getState ? CameraController.getState() : null;
+            CameraController.teleport(
+                pt.position.x, pt.position.y, pt.position.z,
+                st ? st.yaw : 0, st ? st.pitch : 0
+            );
+        }
+    }
+
+    function _syncPlacesMenu() {
+        if (window.UI && UI.setPlacesMenu) UI.setPlacesMenu(_points, _gotoPoint);
+    }
+
     return {
         init: function (app) {
             _app = app;
@@ -21,6 +40,7 @@ window.Teleporter = (function () {
             if (!teleports || !teleports.length) return;
             _onActivate = onActivate;
             _points     = teleports;
+            _syncPlacesMenu();
         },
 
         update: function (camPos) {
@@ -53,6 +73,7 @@ window.Teleporter = (function () {
             _points      = [];
             _activePoint = null;
             if (window.UI) UI.setTeleportPrompt(null, null);
+            _syncPlacesMenu();
         },
 
         setOnActivate: function (fn) { _onActivate = fn; },
@@ -61,10 +82,12 @@ window.Teleporter = (function () {
 
         addPoint: function (point) {
             _points.push(point);
+            _syncPlacesMenu();
         },
 
         removePoint: function (index) {
             _points.splice(index, 1);
+            _syncPlacesMenu();
         }
     };
 }());
