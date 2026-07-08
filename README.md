@@ -75,6 +75,7 @@ Q / E の上下移動・オービット回転が使え、テレポートポイ�
 | ファイル | 内容 |
 |---|---|
 | `point_cloud.json` | `initialCamera`（初期視点）、`teleports`（場所一覧・近接テレポート）、`colliderBoxes`（手動コリジョン箱） |
+| （teleports の各要素） | `label` / `position` / `radius` / `destinationUrl` / `destinationCamera` / `menuOnly`。`menuOnly: true` は場所一覧メニューにのみ表示され近接プロンプトを出さない（3DGS 内に入口が無い部屋＝風呂など向け） |
 | `point_cloud.hmap.json` | 床・天井高さマップコリジョン（管理ツールで生成） |
 | `point_cloud.voxel.json` + `.voxel.bin` | SVO ボクセルコリジョン（splat-transform 生成、hmap より優先） |
 | `manifest.json` | フォルダ URL 読み込み用。`{ "ply": "ファイル名.ply" }` |

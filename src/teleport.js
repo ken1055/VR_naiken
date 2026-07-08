@@ -49,6 +49,10 @@ window.Teleporter = (function () {
             // 最近接ポイントを探す（半径内なら active）
             var nearest = null, nearestDist = Infinity;
             _points.forEach(function (pt) {
+                // メニュー専用ポイント: 場所一覧メニューにのみ表示し、近接トリガーは持たない
+                // （3DGS 内に入口が無い部屋＝風呂など向け。位置は保存されるが判定に使わない）
+                if (pt.menuOnly) return;
+                if (!pt.position) return;
                 var dx   = camPos.x - pt.position.x;
                 var dz   = camPos.z - pt.position.z;
                 var dist = Math.sqrt(dx * dx + dz * dz);
