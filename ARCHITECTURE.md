@@ -17,6 +17,11 @@
 - **index.html** — 閲覧者ページ。`CameraController.setWalkMode(true)` で目線の高さを床に固定。OGP タグ・GA4 計測（`window._track`）を持つ。
 - **admin.html** — 管理ツール（**.gitignore 済み・ローカル専用**）。自由飛行モード。src/*.js を `?v=Date.now()` 付きで動的ロードし、テレポート編集・初期カメラ保存・hmap 生成・手動コリジョン箱編集の UI を注入する。
   - **注意**: `src/*.js` は両ページで共有。共有 API の仕様を変えたら admin.html のインラインコードとの整合を確認すること。
+- **worker/** — プラットフォーム層（Cloudflare Worker + D1）。物件ごとの固有 URL `/p/{id}` を発行し、
+  ビューア HTML に OGP と `window.__PROPERTY__`（物件ID・シーンURL・流入元・beacon先）を注入して配信。
+  閲覧イベントを D1 に記録し、管理 API で経路別・日別の閲覧集計を返す。詳細は `worker/README.md`。
+  - main.js は `__PROPERTY__` があるときのみ「シーン自動読込（許可リスト不要・サーバー管理値）＋ `_track` ラップで beacon 送信」を行う。
+    admin.html・直接アクセスでは no-op。顧客導線は必ず `/p/{id}` を通す（`?url=` は開発・検証用）。
 
 ---
 

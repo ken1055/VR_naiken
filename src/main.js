@@ -49,6 +49,39 @@
     // 管理者ページから参照: 現在読み込まれているシーンの保存先 JSON ファイル名
     window._adminCurrentJSONName = null;
 
+    // ---- プラットフォーム配信 (/p/{id}) の閲覧イベント送信 ----
+    // Worker が window.__PROPERTY__ を注入したときだけ有効。
+    // 既存の window._track (GA4) をラップし、同じイベントを Worker の beacon にも送る。
+    // 直接アクセスや admin.html では __PROPERTY__ が無いので完全に no-op。
+    (function () {
+        var prop = window.__PROPERTY__;
+        if (!prop || !prop.beacon || !prop.id) return;
+        var sid = Math.random().toString(36).slice(2, 10);
+        var origTrack = window._track || function () {};
+        function send(name, params) {
+            try {
+                var body = JSON.stringify({
+                    p:   prop.id,
+                    e:   name,
+                    s:   prop.source || '',
+                    v:   (params && typeof params.load_ms === 'number') ? params.load_ms : null,
+                    sid: sid
+                });
+                // Content-Type を付けない Blob で simple request にする（プリフライト回避）
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon(prop.beacon, new Blob([body]));
+                } else {
+                    fetch(prop.beacon, { method: 'POST', body: body, keepalive: true });
+                }
+            } catch (e) { /* 計測失敗で閲覧を止めない */ }
+        }
+        window._track = function (name, params) {
+            origTrack(name, params);
+            send(name, params);
+        };
+        send('view');
+    })();
+
     // ---- UI を最初に起動（PlayCanvas 失敗でも表示される）----
     UI.init(null, {
         onFileLoaded: function (file) {
@@ -233,6 +266,18 @@
     function _autoLoadFromParam() {
         if (!app) return;
         try {
+            // /p/{id} 経由: Worker が注入した物件設定を最優先で読む。
+            // sceneUrl は D1 管理値（サーバー側で登録済み）のため許可リスト判定は不要。
+            var prop = window.__PROPERTY__;
+            if (prop && prop.sceneUrl) {
+                if (prop.title) {
+                    document.title = prop.title + ' | 3D内見ビューア';
+                    UI.setTitle(prop.title);
+                }
+                _loadFromURL(prop.sceneUrl);
+                return;
+            }
+
             var params = new URLSearchParams(window.location.search);
             var paramURL   = params.get('url');
             var paramTitle = params.get('title');

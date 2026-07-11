@@ -21,6 +21,20 @@ python -m http.server 8080
 
 ## 物件 URL の発行
 
+### 顧客配布用（プラットフォーム経由・推奨）
+
+物件レジストリ（`worker/` — Cloudflare Worker + D1）に登録すると固有 URL と QR が発行されます。
+
+```
+https://<worker>/p/{id}          ← 物件ごとの OGP・掲載期限判定・閲覧計測つき
+https://<worker>/p/{id}/qr.svg   ← 店頭ポップ・チラシ用 QR
+```
+
+流入元は `?s=sns|portal|qr|mail|web` で記録され、経路別の閲覧数が管理 API で集計できます。
+登録・デプロイ手順は [worker/README.md](worker/README.md) を参照。
+
+### 開発・検証用（直接指定）
+
 ```
 https://ken1055.github.io/VR_naiken/?url=<PLYのURL>&title=<物件名>
 ```

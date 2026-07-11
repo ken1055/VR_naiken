@@ -1,0 +1,16 @@
+{
+  "name": "vr-naiken-worker",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute vr-naiken --local --file=schema.sql",
+    "db:init:remote": "wrangler d1 execute vr-naiken --remote --file=schema.sql"
+  },
+  "dependencies": {
+    "qrcode-svg": "^1.1.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

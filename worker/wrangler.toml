@@ -1,0 +1,15 @@
+name = "vr-naiken-platform"
+main = "src/index.js"
+compatibility_date = "2025-12-01"
+
+# 本番ビューアの配信元（GitHub Pages）。ローカル開発時は .dev.vars で上書きする
+[vars]
+VIEWER_ORIGIN = "https://ken1055.github.io/VR_naiken"
+
+# D1 データベース。
+# 本番デプロイ前に `npx wrangler d1 create vr-naiken` を実行し、
+# 表示された database_id をここに貼り替えること（ローカル開発はこのままで動く）。
+[[d1_databases]]
+binding = "DB"
+database_name = "vr-naiken"
+database_id = "00000000-0000-0000-0000-000000000000"
