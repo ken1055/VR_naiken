@@ -2,3 +2,10 @@
 Thumbs.db
 *.log
 admin.html
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
