@@ -127,6 +127,13 @@ gsutil -m setmeta -h "Cache-Control:no-cache" 'gs://vr_naiken_properties/**/*.vo
 `assets/ogp.png`（1200×630）を差し替えると LINE / SNS 共有時の画像が変わります。
 実物件のきれいなスクリーンショット推奨。
 
+### JS 更新時のキャッシュバスタ（重要）
+
+index.html の `<script src="src/*.js?v=YYYYMMDD">` の **`?v=` は src/*.js を変更してデプロイするたびに必ず日付を上げる**。
+バージョン無しだと、再訪ブラウザが「新 index.html + 旧キャッシュ JS」の混在状態になり、
+モジュール間 API の不一致（例: `UI.setPlacesMenu is not a function`）で読み込みが止まる。
+症状は「以前開いたことのある人だけ真っ黒/無反応、初見の人は正常」。
+
 ### PlayCanvas エンジンの更新
 
 エンジンは `vendor/playcanvas-<ver>.min.js` に同梱・バージョン固定しています（突然の破壊的更新と CDN 障害を防ぐため）。
