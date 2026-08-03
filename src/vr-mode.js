@@ -120,7 +120,6 @@ window.VRMode = (function () {
         console.warn('[VRMode] app.xr が存在しません。WebXR 非対応環境です。');
         if (window.UI) {
           window.UI.setVRButtonState('unsupported');
-          window.UI.showTooltip('このブラウザは WebXR VR に対応していません。');
         }
         return;
       }
@@ -129,9 +128,6 @@ window.VRMode = (function () {
 
       if (window.UI) {
         window.UI.setVRButtonState(supported ? 'enter' : 'unsupported');
-        if (!supported) {
-          window.UI.showTooltip('このデバイスは VR に対応していません。');
-        }
       }
 
       if (!supported) {
