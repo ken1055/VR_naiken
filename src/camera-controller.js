@@ -161,6 +161,14 @@ window.CameraController = (function () {
   }
 
   function onMouseMove(e) {
+    // ボタンが押されていないのにドラッグ中扱いなら解除する。
+    // ウィンドウ外や UI ボタン上で mouseup した場合に mouseup を取りこぼし、
+    // 以後カーソルを動かすだけで視点が回り続けるのを防ぐ。
+    if (!_isPointerLocked && e.buttons === 0 && (_mouseLeft || _mouseRight)) {
+      _mouseLeft  = false;
+      _mouseRight = false;
+    }
+
     var dx, dy;
     if (_isPointerLocked) {
       dx = e.movementX || e.mozMovementX || e.webkitMovementX || 0;
@@ -234,8 +242,11 @@ window.CameraController = (function () {
     return Math.sqrt(dx * dx + dy * dy);
   }
 
+  // canvas 上で始まった指だけを見る（targetTouches）。
+  // e.touches は画面上の全ての指を含むため、ジョイスティックに指を置いたまま
+  // 画面をドラッグすると「2本指＝ピンチ」と誤判定され視点回転ができなくなる。
   function onTouchStart(e) {
-    _touches = Array.from(e.touches);
+    _touches = Array.from(e.targetTouches);
     if (_touches.length === 2) {
       _lastPinchDist = getTouchDist(_touches);
     }
@@ -243,7 +254,7 @@ window.CameraController = (function () {
   }
 
   function onTouchMove(e) {
-    var curTouches = Array.from(e.touches);
+    var curTouches = Array.from(e.targetTouches);
 
     if (curTouches.length === 1 && _touches.length === 1) {
       // 1本指ドラッグ: FPS 回転 → ターゲット更新
@@ -280,7 +291,7 @@ window.CameraController = (function () {
   }
 
   function onTouchEnd(e) {
-    _touches = Array.from(e.touches);
+    _touches = Array.from(e.targetTouches);
     if (_touches.length < 2) _lastPinchDist = null;
     e.preventDefault();
   }
@@ -305,10 +316,14 @@ window.CameraController = (function () {
 
       var canvas = app.graphicsDevice.canvas;
 
-      // マウスイベント
+      // マウスイベント。
+      // ドラッグ開始は canvas 上のみ（UI ボタンのクリックで回転を始めないため）だが、
+      // 移動・終了は window で拾う。canvas に限ると、ドラッグ中にカーソルが
+      // ヘルプボタンや「〇〇へ移動」ボタンの上を通過した瞬間に視点回転が止まり、
+      // 移動しながらの視点操作が途切れてしまう。
       canvas.addEventListener('mousedown',     onMouseDown,   false);
-      canvas.addEventListener('mousemove',     onMouseMove,   false);
-      canvas.addEventListener('mouseup',       onMouseUp,     false);
+      window.addEventListener('mousemove',     onMouseMove,   false);
+      window.addEventListener('mouseup',       onMouseUp,     false);
       canvas.addEventListener('wheel',         onWheel,       { passive: false });
       canvas.addEventListener('contextmenu',   onContextMenu, false);
 

@@ -158,27 +158,24 @@ window.UI = (function () {
         '  transition: opacity 0.3s; }',
         '#vr-status-bar.hidden { display: none; }',
 
+        /* テレポート導線は「〇〇へ移動」ボタン 1 つに統一する
+           （場所名ラベルとボタンが縦に並ぶと、どちらが押せるのか分からないため）*/
         '#vr-teleport-prompt {',
         '  position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);',
-        '  z-index: 130; display: flex; flex-direction: column; align-items: center; gap: 10px;',
+        '  z-index: 130; display: flex; align-items: center;',
         '  transition: opacity 0.3s; white-space: nowrap; }',
         '#vr-teleport-prompt.hidden { display: none; }',
-        '#vr-teleport-label {',
-        '  padding: 8px 20px; border-radius: 99px;',
-        '  background: rgba(0,4,12,0.92);',
-        '  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);',
-        '  border: 1px solid rgba(0,212,170,0.2);',
-        '  color: rgba(0,212,170,0.9); font-size: 13px;',
-        '  font-family: system-ui, sans-serif; }',
         '#vr-teleport-btn {',
-        '  padding: 10px 28px; border-radius: 99px;',
-        '  background: rgba(0,212,170,0.12);',
+        '  padding: 12px 30px; border-radius: 99px;',
+        '  background: rgba(0,212,170,0.16);',
         '  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);',
-        '  border: 1.5px solid rgba(0,212,170,0.45);',
-        '  color: #00D4AA; font-size: 13px; font-weight: 700;',
+        '  border: 1.5px solid rgba(0,212,170,0.5);',
+        '  color: #00D4AA; font-size: 14px; font-weight: 700;',
+        '  max-width: 78vw; overflow: hidden; text-overflow: ellipsis;',
+        '  box-shadow: 0 6px 24px rgba(0,0,0,0.45);',
         '  cursor: pointer; font-family: system-ui, sans-serif; transition: all 0.15s; }',
         '#vr-teleport-btn:hover {',
-        '  background: rgba(0,212,170,0.22); border-color: rgba(0,212,170,0.75); }',
+        '  background: rgba(0,212,170,0.26); border-color: rgba(0,212,170,0.8); }',
 
         '#vr-fade-overlay {',
         '  position: fixed; inset: 0; z-index: 250; background: #000;',
@@ -247,6 +244,13 @@ window.UI = (function () {
 
         /* ウォークモード中は上下移動ボタンを隠す（高さは床に固定追従）*/
         'body.walk-mode #vr-move-btns { display: none !important; }',
+
+        /* スマホ: 「〇〇へ移動」ボタンがジョイスティック（left 32 / bottom 60 / 110px 角、
+           上端は下から 170px）に重なるため、その上へ逃がす。
+           ジョイスティックを出さないパノラマモードでは元の高さのままにする。*/
+        '@media (hover: none) and (pointer: coarse) {',
+        '  body:not(.pano-mode) #vr-teleport-prompt { bottom: 186px; }',
+        '}',
     ].join('\n');
 
     var _elLoading     = null;
@@ -256,7 +260,6 @@ window.UI = (function () {
     var _helpTimer     = null;
     var _elStatusBar      = null;
     var _elTeleportPrompt = null;
-    var _elTeleportLabel  = null;
     var _elTeleportBtn    = null;
     var _elFadeOverlay    = null;
     var _teleportClick    = null;
@@ -326,7 +329,7 @@ window.UI = (function () {
             var _isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
             var _helpRows = _isTouchDevice ? [
                 '<tr><td>左ジョイスティック</td><td>前後左右移動</td></tr>',
-                '<tr><td>右エリアドラッグ</td><td>視点回転</td></tr>',
+                '<tr><td>画面ドラッグ</td><td>視点回転（移動と同時に可）</td></tr>',
                 '<tr><td>↑ / ↓ ボタン</td><td>上昇・下降</td></tr>',
             ] : [
                 '<tr><td>左右ドラッグ</td><td>視点回転</td></tr>',
@@ -441,11 +444,10 @@ window.UI = (function () {
             _elStatusBar = el('div', { id: 'vr-status-bar', className: 'hidden' });
             root.appendChild(_elStatusBar);
 
-            // テレポートプロンプト
-            _elTeleportLabel  = el('div', { id: 'vr-teleport-label' });
+            // テレポートプロンプト（「〇〇へ移動」ボタン 1 つ）
             _elTeleportBtn    = el('button', { id: 'vr-teleport-btn', textContent: 'ここへ移動' });
             _elTeleportPrompt = el('div', { id: 'vr-teleport-prompt', className: 'hidden' },
-                [_elTeleportLabel, _elTeleportBtn]);
+                [_elTeleportBtn]);
             _elTeleportBtn.addEventListener('click', function () {
                 if (_teleportClick) _teleportClick();
             });
@@ -528,7 +530,11 @@ window.UI = (function () {
                 _teleportClick = null;
                 return;
             }
-            _elTeleportLabel.textContent = point.label || 'テレポート';
+            // 場所名をボタン文言に埋め込む（例: 「浴室へ移動」）。
+            // 名前が無い場合と、すでに「〜移動」で終わる名前はそのまま扱う。
+            var label = (point.label || '').trim();
+            _elTeleportBtn.textContent =
+                !label ? 'ここへ移動' : (/移動$/.test(label) ? label : label + 'へ移動');
             _teleportClick = onClick;
             _elTeleportPrompt.classList.remove('hidden');
         },
@@ -565,7 +571,7 @@ window.UI = (function () {
             if (touch) {
                 rows = [
                     '<tr><td>左ジョイスティック</td><td>前後左右移動</td></tr>',
-                    '<tr><td>右エリアドラッグ</td><td>視点回転</td></tr>',
+                    '<tr><td>画面ドラッグ</td><td>視点回転（移動と同時に可）</td></tr>',
                 ];
                 if (!on) rows.push('<tr><td>↑ / ↓ ボタン</td><td>上昇・下降</td></tr>');
             } else {
