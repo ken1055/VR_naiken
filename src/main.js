@@ -34,6 +34,16 @@
         return file && /\.(jpg|jpeg|png)$/i.test(file.name);
     }
 
+    // コンパニオンファイル（.json / .hmap.json / .voxel.json+bin）を探すときの基準名。
+    // 転送量削減で PLY を splat-transform 圧縮すると point_cloud.compressed.ply に
+    // なるが、コンパニオンは原本と同じ point_cloud.* のまま運用したい。
+    // ここで .compressed を落とさないと point_cloud.compressed.hmap.json を探しにいき、
+    // 見つからないまま「コリジョン無しで床をすり抜ける」状態に無言で陥る。
+    function _companionBase(pathOrURL) {
+        return String(pathOrURL).split('?')[0]
+            .replace(/(\.compressed)?\.(ply|splat)$/i, '');
+    }
+
     // companion file (.hmap.json / .voxel.json/.bin) 用のセッション内キャッシュバスタ。
     // GCS の CDN エッジが max-age=3600 でグローバルに hmap/voxel を保持するため、
     // ページロードごとにユニークなクエリを付けて新版を確実に取得する。
@@ -531,7 +541,7 @@
         }
 
         // 同名のコンパニオンファイルを探す
-        var base      = plyFile.name.replace(/\.(ply|splat)$/i, '');
+        var base      = _companionBase(plyFile.name);
         var jsonFile  = fileArr.find(function (f) { return f.name === base + '.json'; });
         var hmapFile  = fileArr.find(function (f) { return f.name === base + '.hmap.json'; });
         var voxelJson = fileArr.find(function (f) { return f.name === base + '.voxel.json'; });
@@ -676,13 +686,14 @@
     // ---- 管理者用: 現在のシーンに対応する JSON ファイル名を更新 ----
     function _updateAdminCurrentJSON(assetName, sourceURL) {
         var base = (sourceURL ? sourceURL.split('?')[0].split('/').pop() : assetName) || 'scene';
-        window._adminCurrentJSONName = base.replace(/\.(ply|splat|lcc|jpg|jpeg|png)$/i, '.json');
+        window._adminCurrentJSONName =
+            base.replace(/(\.compressed)?\.(ply|splat|lcc|jpg|jpeg|png)$/i, '') + '.json';
     }
 
     // ---- 管理者ツール生成の .hmap.json を自動検出 ----
     function _tryLoadCompanionHmap(url) {
         if (!url || !window.Collider) return;
-        var base    = url.split('?')[0].replace(/\.(ply|splat)$/i, '');
+        var base    = _companionBase(url);
         // GCS の CDN エッジが古い版を保持するのでキャッシュバスト
         // セッション内では同じバスタを使うので無駄なfetchは増えない
         var hmapUrl = base + '.hmap.json?cb=' + _companionCB;
@@ -715,7 +726,7 @@
     // ファイルが存在しない場合は何もしない（エラーは無視）
     function _tryLoadCompanionVoxel(url) {
         if (!url || !window.Collider) return;
-        var base    = url.split('?')[0].replace(/\.(ply|splat)$/i, '');
+        var base    = _companionBase(url);
         var jsonUrl = base + '.voxel.json?cb=' + _companionCB;
         var binUrl  = base + '.voxel.bin?cb=' + _companionCB;
 
@@ -755,7 +766,7 @@
 
     function _applyCompanionJSON(url) {
         var base    = url.split('?')[0];
-        var jsonURL = base.replace(/\.(ply|splat)$/i, '.json');
+        var jsonURL = _companionBase(url) + '.json';
         if (jsonURL === base) { _applyColliderBoxes(null); _applyPendingTeleportState(); return; }
 
         fetch(jsonURL, { cache: 'no-store' })
