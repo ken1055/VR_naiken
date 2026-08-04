@@ -531,10 +531,17 @@ window.UI = (function () {
                 return;
             }
             // 場所名をボタン文言に埋め込む（例: 「浴室へ移動」）。
-            // 名前が無い場合と、すでに「〜移動」で終わる名前はそのまま扱う。
+            // 既存シーンのラベルは「トイレへ」のように助詞付きで保存されているため、
+            // 末尾の「へ」「に」を落としてから繋ぐ（「トイレへへ移動」を防ぐ）。
+            // すでに「〜移動」で終わるラベルはそのまま使う。
             var label = (point.label || '').trim();
-            _elTeleportBtn.textContent =
-                !label ? 'ここへ移動' : (/移動$/.test(label) ? label : label + 'へ移動');
+            if (!label) {
+                _elTeleportBtn.textContent = 'ここへ移動';
+            } else if (/移動$/.test(label)) {
+                _elTeleportBtn.textContent = label;
+            } else {
+                _elTeleportBtn.textContent = label.replace(/[へに]$/, '') + 'へ移動';
+            }
             _teleportClick = onClick;
             _elTeleportPrompt.classList.remove('hidden');
         },
