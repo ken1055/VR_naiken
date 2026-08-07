@@ -83,23 +83,27 @@ window.UI = (function () {
         '  font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase;',
         '  min-width: 100px; }',
 
-        /* ヘルプボタン */
+        /* 操作方法ボタン（「?」アイコンだと何のボタンか伝わらないので文字で出す）*/
         '#vr-help-btn {',
         '  position: fixed; bottom: 20px; right: 20px; z-index: 120;',
-        '  width: 32px; height: 32px; border-radius: 50%;',
+        '  padding: 9px 16px; border-radius: 99px; white-space: nowrap;',
         '  background: rgba(0,4,12,0.9);',
         '  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);',
-        '  border: 1px solid rgba(0,212,170,0.15);',
-        '  color: rgba(0,212,170,0.55); font-size: 14px; font-weight: 700;',
+        '  border: 1px solid rgba(0,212,170,0.22);',
+        '  color: rgba(0,212,170,0.75); font-size: 12px; font-weight: 700;',
+        '  font-family: system-ui, sans-serif; letter-spacing: 0.3px;',
         '  cursor: pointer; display: flex; align-items: center; justify-content: center;',
         '  transition: all 0.15s; }',
         '#vr-help-btn:hover {',
         '  background: rgba(0,212,170,0.12);',
-        '  border-color: rgba(0,212,170,0.4); color: #00D4AA; }',
+        '  border-color: rgba(0,212,170,0.45); color: #00D4AA; }',
+        '#vr-help-btn.active {',
+        '  background: rgba(0,212,170,0.2);',
+        '  border-color: rgba(0,212,170,0.7); color: #00D4AA; }',
 
-        /* 初期位置に戻るボタン（ヘルプボタンの上に重ねて配置）*/
+        /* 初期位置に戻るボタン（操作方法ボタンの上に重ねて配置）*/
         '#vr-home-btn {',
-        '  position: fixed; bottom: 60px; right: 20px; z-index: 120;',
+        '  position: fixed; bottom: 64px; right: 20px; z-index: 120;',
         '  width: 32px; height: 32px; border-radius: 50%;',
         '  background: rgba(0,4,12,0.9);',
         '  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);',
@@ -128,9 +132,35 @@ window.UI = (function () {
         '  pointer-events: none;',
         '  transition: transform 0.05s; }',
 
-        /* 上下移動ボタン */
+        /* PC 用 十字移動ボタン。WASD と同じ割り当て（↑↓=前後 / ←→=左右への平行移動）。
+           スマホはジョイスティックがあるので生成しない。位置はジョイスティックと揃える。*/
+        '#vr-dpad {',
+        '  position: fixed; left: 32px; bottom: 60px; z-index: 120;',
+        '  display: grid; grid-template-columns: repeat(3, 44px);',
+        '  grid-template-rows: repeat(3, 44px); gap: 4px;',
+        '  user-select: none; -webkit-user-select: none; }',
+        '#vr-dpad .vr-dpad-btn {',
+        '  width: 44px; height: 44px; border-radius: 10px; padding: 0;',
+        '  background: rgba(0,4,12,0.85);',
+        '  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);',
+        '  border: 1px solid rgba(0,212,170,0.22);',
+        '  color: rgba(0,212,170,0.75); font-size: 15px; line-height: 1;',
+        '  cursor: pointer; display: flex; align-items: center; justify-content: center;',
+        '  transition: background 0.1s, border-color 0.1s, color 0.1s; }',
+        '#vr-dpad .vr-dpad-btn:hover {',
+        '  background: rgba(0,212,170,0.14);',
+        '  border-color: rgba(0,212,170,0.45); color: #00D4AA; }',
+        '#vr-dpad .vr-dpad-btn.pressed {',
+        '  background: rgba(0,212,170,0.26);',
+        '  border-color: rgba(0,212,170,0.7); color: #00D4AA; }',
+        '#vr-dpad-up    { grid-area: 1 / 2; }',
+        '#vr-dpad-left  { grid-area: 2 / 1; }',
+        '#vr-dpad-right { grid-area: 2 / 3; }',
+        '#vr-dpad-down  { grid-area: 3 / 2; }',
+
+        /* 上下移動ボタン（自由飛行モードのみ。操作方法ボタンが横に広がったので上へ逃がす）*/
         '#vr-move-btns {',
-        '  position: fixed; bottom: 20px; right: 60px; z-index: 120;',
+        '  position: fixed; bottom: 106px; right: 20px; z-index: 120;',
         '  display: flex; flex-direction: column; gap: 8px; }',
         '.vr-move-btn {',
         '  width: 48px; height: 48px; border-radius: 50%;',
@@ -238,6 +268,7 @@ window.UI = (function () {
 
         /* パノラマモード中は移動UIを隠す */
         'body.pano-mode #vr-joystick-base,',
+        'body.pano-mode #vr-dpad,',
         'body.pano-mode #vr-move-btns,',
         'body.pano-mode #vr-home-btn,',
         'body.pano-mode #vr-help-overlay { display: none !important; }',
@@ -257,7 +288,9 @@ window.UI = (function () {
     var _elLoadingMsg  = null;
     var _elToastCont   = null;
     var _elHelpOverlay = null;
+    var _elHelpBtn     = null;
     var _helpTimer     = null;
+    var _helpPinned    = false;   // 「操作方法」ボタンから開いた状態（自動で閉じない）
     var _elStatusBar      = null;
     var _elTeleportPrompt = null;
     var _elTeleportBtn    = null;
@@ -292,14 +325,37 @@ window.UI = (function () {
         if (_elPlacesBtn) _elPlacesBtn.classList.toggle('open', open);
     }
 
-    function showHelp() {
+    /**
+     * 操作説明を表示する。
+     * @param {boolean} [pin] true なら自動で閉じない（「操作方法」ボタンから開いたとき）。
+     *   読み込み直後の自動表示は 5 秒で消えるが、自分で開いたものが勝手に消えると
+     *   読んでいる途中で消えて余計に分かりにくいため。
+     */
+    function showHelp(pin) {
         if (!_elHelpOverlay) return;
+        if (_helpTimer) { clearTimeout(_helpTimer); _helpTimer = null; }
         _elHelpOverlay.classList.remove('hidden', 'fade-out');
-        if (_helpTimer) clearTimeout(_helpTimer);
+        _helpPinned = !!pin;
+        if (_elHelpBtn) _elHelpBtn.classList.toggle('active', _helpPinned);
+        if (_helpPinned) return;
         _helpTimer = setTimeout(function () {
             _elHelpOverlay.classList.add('fade-out');
             setTimeout(function () { _elHelpOverlay.classList.add('hidden'); }, 650);
         }, 5000);
+    }
+
+    function hideHelp() {
+        if (!_elHelpOverlay) return;
+        if (_helpTimer) { clearTimeout(_helpTimer); _helpTimer = null; }
+        _elHelpOverlay.classList.add('fade-out');
+        setTimeout(function () { _elHelpOverlay.classList.add('hidden'); }, 650);
+        _helpPinned = false;
+        if (_elHelpBtn) _elHelpBtn.classList.remove('active');
+    }
+
+    function toggleHelp() {
+        if (_helpPinned) hideHelp();
+        else showHelp(true);
     }
 
     return {
@@ -332,8 +388,9 @@ window.UI = (function () {
                 '<tr><td>画面ドラッグ</td><td>視点回転（移動と同時に可）</td></tr>',
                 '<tr><td>↑ / ↓ ボタン</td><td>上昇・下降</td></tr>',
             ] : [
-                '<tr><td>左右ドラッグ</td><td>視点回転</td></tr>',
+                '<tr><td>左下の十字ボタン</td><td>前後左右移動</td></tr>',
                 '<tr><td>W / A / S / D</td><td>前後左右移動</td></tr>',
+                '<tr><td>左右ドラッグ</td><td>視点回転</td></tr>',
                 '<tr><td>Q</td><td>上昇</td></tr>',
                 '<tr><td>E</td><td>下降</td></tr>',
                 '<tr><td>ホイール</td><td>移動速度変更</td></tr>',
@@ -342,9 +399,10 @@ window.UI = (function () {
                 innerHTML: '<table>' + _helpRows.join('') + '</table>' });
             root.appendChild(_elHelpOverlay);
 
-            var helpBtn = el('button', { id: 'vr-help-btn', title: '操作説明', textContent: '?' });
-            helpBtn.addEventListener('click', showHelp);
-            root.appendChild(helpBtn);
+            _elHelpBtn = el('button', { id: 'vr-help-btn', title: '操作方法を表示',
+                textContent: '操作方法' });
+            _elHelpBtn.addEventListener('click', toggleHelp);
+            root.appendChild(_elHelpBtn);
 
             // 初期位置に戻るボタン（家アイコン）
             var homeBtn = el('button', { id: 'vr-home-btn', title: '初期位置に戻る',
@@ -359,6 +417,67 @@ window.UI = (function () {
                 }
             });
             root.appendChild(homeBtn);
+
+            // PC のみ: 十字移動ボタン（WASD と同じ ↑↓=前後 / ←→=左右への平行移動）。
+            // 入力は CameraController.setJoystick に流す。スマホのジョイスティックと
+            // 同じ経路だが、十字ボタンはタッチ端末では生成しないので競合しない。
+            if (!_isTouchDevice) {
+                var dpadDirs = [
+                    { id: 'vr-dpad-up',    glyph: '▲', title: '前進 (W)',   x:  0, y: -1 },
+                    { id: 'vr-dpad-left',  glyph: '◀', title: '左へ (A)',   x: -1, y:  0 },
+                    { id: 'vr-dpad-right', glyph: '▶', title: '右へ (D)',   x:  1, y:  0 },
+                    { id: 'vr-dpad-down',  glyph: '▼', title: '後退 (S)',   x:  0, y:  1 },
+                ];
+                var _dpadHeld = {};   // ボタンid → {x, y}（複数同時押しに対応）
+                var dpad = el('div', { id: 'vr-dpad' });
+
+                function _applyDpad() {
+                    var x = 0, y = 0;
+                    Object.keys(_dpadHeld).forEach(function (k) {
+                        x += _dpadHeld[k].x;
+                        y += _dpadHeld[k].y;
+                    });
+                    // 左右同時押しは相殺。斜めは速くならないよう正規化する
+                    x = Math.max(-1, Math.min(1, x));
+                    y = Math.max(-1, Math.min(1, y));
+                    if (x !== 0 && y !== 0) { x *= Math.SQRT1_2; y *= Math.SQRT1_2; }
+                    if (window.CameraController) CameraController.setJoystick(x, y);
+                }
+
+                function _releaseAllDpad() {
+                    Object.keys(_dpadHeld).forEach(function (k) {
+                        var b = document.getElementById(k);
+                        if (b) b.classList.remove('pressed');
+                    });
+                    _dpadHeld = {};
+                    _applyDpad();
+                }
+
+                dpadDirs.forEach(function (d) {
+                    var btn = el('button', { id: d.id, className: 'vr-dpad-btn',
+                        title: d.title, textContent: d.glyph });
+                    btn.addEventListener('pointerdown', function (e) {
+                        e.preventDefault();
+                        btn.classList.add('pressed');
+                        _dpadHeld[d.id] = { x: d.x, y: d.y };
+                        _applyDpad();
+                    });
+                    // ボタン上で離す / ボタンから出る / キャンセル のいずれでも止める。
+                    // pointerup だけだと、押したままカーソルを外して離すと動き続ける。
+                    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
+                        btn.addEventListener(ev, function () {
+                            if (!_dpadHeld[d.id]) return;
+                            btn.classList.remove('pressed');
+                            delete _dpadHeld[d.id];
+                            _applyDpad();
+                        });
+                    });
+                    dpad.appendChild(btn);
+                });
+                // タブ切り替え等で pointerup を取りこぼしても止まるように
+                window.addEventListener('blur', _releaseAllDpad);
+                root.appendChild(dpad);
+            }
 
             // スマホのみ: バーチャルジョイスティック + 上下ボタン
             if (_isTouchDevice) {
@@ -583,8 +702,9 @@ window.UI = (function () {
                 if (!on) rows.push('<tr><td>↑ / ↓ ボタン</td><td>上昇・下降</td></tr>');
             } else {
                 rows = [
-                    '<tr><td>左右ドラッグ</td><td>視点回転</td></tr>',
+                    '<tr><td>左下の十字ボタン</td><td>前後左右移動</td></tr>',
                     '<tr><td>W / A / S / D</td><td>前後左右移動</td></tr>',
+                    '<tr><td>左右ドラッグ</td><td>視点回転</td></tr>',
                 ];
                 if (!on) {
                     rows.push('<tr><td>Q</td><td>上昇</td></tr>');
