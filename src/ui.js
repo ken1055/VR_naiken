@@ -101,20 +101,21 @@ window.UI = (function () {
         '  background: rgba(0,212,170,0.2);',
         '  border-color: rgba(0,212,170,0.7); color: #00D4AA; }',
 
-        /* 初期位置に戻るボタン（操作方法ボタンの上に重ねて配置）*/
+        /* 初期位置に戻るボタン（操作方法ボタンの上に同じ形で配置。家アイコンだけでは
+           何のボタンか伝わらないので文字で出す）*/
         '#vr-home-btn {',
-        '  position: fixed; bottom: 64px; right: 20px; z-index: 120;',
-        '  width: 32px; height: 32px; border-radius: 50%;',
+        '  position: fixed; bottom: 62px; right: 20px; z-index: 120;',
+        '  padding: 9px 16px; border-radius: 99px; white-space: nowrap;',
         '  background: rgba(0,4,12,0.9);',
         '  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);',
-        '  border: 1px solid rgba(0,212,170,0.15);',
-        '  color: rgba(0,212,170,0.55);',
+        '  border: 1px solid rgba(0,212,170,0.22);',
+        '  color: rgba(0,212,170,0.75); font-size: 12px; font-weight: 700;',
+        '  font-family: system-ui, sans-serif; letter-spacing: 0.3px;',
         '  cursor: pointer; display: flex; align-items: center; justify-content: center;',
         '  transition: all 0.15s; }',
         '#vr-home-btn:hover {',
         '  background: rgba(0,212,170,0.12);',
-        '  border-color: rgba(0,212,170,0.4); color: #00D4AA; }',
-        '#vr-home-btn svg { width: 16px; height: 16px; display: block; }',
+        '  border-color: rgba(0,212,170,0.45); color: #00D4AA; }',
 
         /* バーチャルジョイスティック */
         '#vr-joystick-base {',
@@ -404,12 +405,9 @@ window.UI = (function () {
             _elHelpBtn.addEventListener('click', toggleHelp);
             root.appendChild(_elHelpBtn);
 
-            // 初期位置に戻るボタン（家アイコン）
-            var homeBtn = el('button', { id: 'vr-home-btn', title: '初期位置に戻る',
-                innerHTML: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-                    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-                    '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
-                    '<polyline points="9 22 9 12 15 12 15 22"/></svg>' });
+            // 初期位置に戻るボタン（文字ラベル。以前は家アイコンだけで用途が伝わらなかった）
+            var homeBtn = el('button', { id: 'vr-home-btn', title: '保存されている初期位置に戻ります',
+                textContent: '初期位置に戻る' });
             homeBtn.addEventListener('click', function () {
                 if (window.CameraController && CameraController.resetToHome) {
                     CameraController.resetToHome();
