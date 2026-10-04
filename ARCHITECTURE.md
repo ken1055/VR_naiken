@@ -15,7 +15,8 @@
 ## ページ構成
 
 - **index.html** — 閲覧者ページ。`CameraController.setWalkMode(true)` で目線の高さを床に固定。OGP タグ・GA4 計測（`window._track`）を持つ。
-- **admin.html** — 管理ツール（**.gitignore 済み・ローカル専用**）。自由飛行モード。src/*.js を `?v=Date.now()` 付きで動的ロードし、テレポート編集・初期カメラ保存・hmap 生成・手動コリジョン箱編集の UI を注入する。
+- **admin.html** — 管理ツール（**.gitignore 済み・ローカル専用**）。自由飛行モード。src/*.js を `?v=Date.now()` 付きで動的ロードし、テレポート編集・初期カメラ保存・hmap 生成・手動コリジョン箱編集・公開準備（`tools/serve.js` の `/api/pipeline/*` を叩いて水平化→コリジョン→圧縮→アップロードを実行）の UI を注入する。
+- **tools/serve.js** — ローカル開発サーバー。静的配信に加え、公開準備 API（フォルダ選択ダイアログ／`level_gaussian_ply.py`・`optimize_scene.py`・`build_collider.js`・`gcloud storage cp` の実行と SSE ログ／`/local/<token>/` でローカルフォルダをビューアに見せる一時マウント）を持つ。127.0.0.1 にだけ bind し、実行するコマンドは固定。
   - **注意**: `src/*.js` は両ページで共有。共有 API の仕様を変えたら admin.html のインラインコードとの整合を確認すること。
 - **worker/** — プラットフォーム層（Cloudflare Worker + D1）。物件ごとの固有 URL `/p/{id}` を発行し、
   ビューア HTML に OGP と `window.__PROPERTY__`（物件ID・シーンURL・流入元・beacon先）を注入して配信。
@@ -66,6 +67,7 @@ vendor/playcanvas-2.7.4.min.js
 ```
 
 - コリジョン読込完了時は `CameraController.requestSettle()` で床追従位置へ即スナップ（初期位置からのワープ防止）
+- hmap 生成（`Collider.buildAsync`）の範囲決め: パーセンタイル bbox（上下 0.3% 切り捨て）→ 0.25m の密度格子で「面として密なセル」の最大連結成分（床・壁・天井の殻）＋0.75m 以内の成分を本体とする。窓越しの屋外・空のスプラットが 0.3% を超えると bbox が数十 m に膨らみ、1 ボクセルが 20cm 超になって廊下が丸ごと壁扱いになるため（2026-10-05 修正）。壁の膨らみ（ガウシアン半径のスタンプ）は軸ごとのボクセル数に換算し物理長 7.5cm で頭打ち。回帰確認は `tools/collider_reach.js`（到達面積）。
 - 通常シーン→パノラマ遷移時は戻り先（URL + カメラ状態）を記憶し「元の部屋に戻る」で復帰
 
 ---
@@ -89,7 +91,8 @@ vendor/playcanvas-2.7.4.min.js
 ## ローカル開発サーバー
 
 ```bash
-python -m http.server 8080
+node tools/serve.js 8080       # 管理ツールの「公開準備」を使うならこちら
+python -m http.server 8080     # 閲覧だけならこれでも可
 ```
 
 `localhost:8080` でアクセス（WebXR は localhost で HTTP 可）。

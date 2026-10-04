@@ -12,10 +12,11 @@
 
 ```bash
 cd vr-naiken
-python -m http.server 8080
+node tools/serve.js 8080       # 静的配信 + 管理ツールの「公開準備」API（127.0.0.1 のみ）
 ```
 
 `http://localhost:8080` にアクセス。管理ツールは `http://localhost:8080/admin.html`（ローカル専用・git 非管理）。
+閲覧だけなら `python -m http.server 8080` でも動くが、その場合 admin.html の「公開準備」（水平化→コリジョン→圧縮→アップロードのワンボタン）は使えない。
 
 ---
 
@@ -58,7 +59,7 @@ https://ken1055.github.io/VR_naiken/?url=<PLYのURL>&title=<物件名>
 | スマホ | 左ジョイスティック | 前後左右移動 |
 | スマホ | 右エリアドラッグ | 視点回転 |
 | 共通 | 右上の三本バー | 場所一覧メニュー（各部屋へ直接テレポート） |
-| 共通 | 右下の家アイコン | 初期位置に戻る |
+| 共通 | 右下の「初期位置に戻る」ボタン | 保存されている初期位置に戻る |
 
 - テレポートポイントの半径内に近づくと「ここへ移動」プロンプトが表示されます
 - テレポート先が 360度画像の場合はパノラマモードに切り替わり、「元の部屋に戻る」ボタンで復帰できます
@@ -105,6 +106,20 @@ splat-transform の圧縮 PLY 形式は 16 バイト/スプラットで、**13.5
 同一視点で描画を比較したところ 64 ブロック平均の絶対差 0.4/255・最大 2/255 で、見た目の差は
 ほぼありません。拡張子が `.ply` のままなのでビューア側は無改修で読めます。
 
+### ワンボタン（推奨）: admin.html の「公開準備」
+
+```bash
+node tools/serve.js            # http://localhost:8099/admin.html を開く（python -m http.server の代わり）
+```
+
+管理者バーの **「公開準備」** → **「フォルダを選ぶ…」** で PortalCam の出力フォルダ
+（`point_cloud.ply` があるフォルダ）を選び、**「実行」** を押すと 水平化 → コリジョン生成 → 圧縮 が
+順に走ってログが流れます（実測: 116万スプラットで 43 秒）。終わったら **「この物件をビューアで開いて確認」**
+で歩いて確かめ、物件名を入れて **「アップロード」**（gcloud）を押すと物件登録用の `scene_url` が出ます。
+`python -m http.server` で開いた admin.html には API が無いのでこのパネルは動きません。
+
+### コマンドで手動実行する場合
+
 ```bash
 # 圧縮 + アップロードコマンドの生成（末尾に gsutil コマンドが出力される）
 python tools/optimize_scene.py <物件フォルダ>/point_cloud.ply \
@@ -113,10 +128,17 @@ python tools/optimize_scene.py <物件フォルダ>/point_cloud.ply \
 
 処理順序を守ること（後戻りできません）:
 
-1. **水平化** `python tools/level_gaussian_ply.py point_cloud.ply -o point_cloud.ply`
-2. **コリジョン生成** admin.html で hmap を作る → `point_cloud.hmap.json`
+1. **水平化** `python tools/level_gaussian_ply.py point_cloud.ply -o point_cloud.ply --skip-if-leveled`（済んだ PLY にはヘッダーに `comment leveled vr-naiken` の印が付き、`--skip-if-leveled` で二重実行を避けられる）
+2. **コリジョン生成** `node tools/build_collider.js point_cloud.ply` → `point_cloud.hmap.json`（admin.html の「コリジョン生成」と同じ結果。手順3が未生成なら自動で実行する）
 3. **圧縮** `python tools/optimize_scene.py point_cloud.ply`
-4. **アップロード**（3 が出力したコマンド）
+4. **アップロード**（3 が出力したコマンド。gsutil が壊れている環境では `gcloud storage cp --gzip-local=json --cache-control=...` で同じことができる）
+
+コリジョンが「狭い通路を通れない」「壁をすり抜ける」ときは、ビューアを開かずに
+`node tools/collider_reach.js point_cloud.hmap.json point_cloud.json --map` で
+初期視点から実際に歩いて行ける面積と範囲図を出せます（`src/collider.js` の衝突解決をそのまま使う回帰テスト）。
+2026-10-05 より前に生成した `.hmap.json` は、窓の外の建物・空のスプラットで範囲が数十 m に膨らみ
+1 ボクセルが 20cm 超になっていることがあります（10月1日・7月18日キッチン・8月4日の各物件で確認）。
+公開準備の **「コリジョンを作り直す」** で再生成し、公開済みなら `.hmap.json` だけ上げ直してください。
 
 `level_gaussian_ply.py` と admin のコリジョン生成はどちらも「全プロパティが float の PLY」を
 前提に自前パースしているため、**圧縮 PLY を入力にできません**。原本はローカルに残すこと。

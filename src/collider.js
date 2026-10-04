@@ -273,6 +273,90 @@ window.Collider = (function () {
 
     function vi(vx, vy, vz) { return vx + vy * GRID + vz * GRID2; }
 
+    // ---- Phase 2c 用: 粗い点密度格子から「本体」の bbox を求める ----
+    // counts: Uint32Array(nx*ny*nz) 各セルの点数、cell: セル一辺 (m)、(ox,oy,oz): 格子原点、
+    // fallback: 絞り込み前の bbox（本体が見つからない・小さすぎる場合はこれを返す）
+    function denseClusterBounds(counts, nx, ny, nz, cell, ox, oy, oz, fallback) {
+        var N = counts.length, total = 0, nonEmpty = 0;
+        for (var i = 0; i < N; i++) { if (counts[i]) { total += counts[i]; nonEmpty++; } }
+        if (!nonEmpty) return fallback;
+
+        // 「点の半分が入っているセルの密度」（点数で重み付けした中央値）を面の典型密度とする。
+        // 空・屋外のハローはセル数こそ多いが点数は少ないので、この値を引き下げない。
+        var vals = new Uint32Array(nonEmpty), k = 0;
+        for (var j = 0; j < N; j++) if (counts[j]) vals[k++] = counts[j];
+        vals.sort();
+        var acc = 0, typ = vals[nonEmpty - 1];
+        for (var m = nonEmpty - 1; m >= 0; m--) { acc += vals[m]; if (acc >= total / 2) { typ = vals[m]; break; } }
+        var T = Math.max(4, Math.round(typ * 0.1));   // 典型密度の 1/10 以上を「密」とする
+
+        // 密なセルを 26-連結でラベリングし、成分ごとのセル数と bbox を取る
+        var labels = new Int32Array(N), queue = new Int32Array(N);
+        var sizes = [0], bb = [null], next = 1, nxy = nx * ny;
+        for (var s = 0; s < N; s++) {
+            if (counts[s] < T || labels[s]) continue;
+            var head = 0, tail = 0; queue[tail++] = s; labels[s] = next;
+            var size = 0, b = [nx, -1, ny, -1, nz, -1];
+            while (head < tail) {
+                var idx = queue[head++]; size++;
+                var x = idx % nx, r = (idx - x) / nx, y = r % ny, z = (r - y) / ny;
+                if (x < b[0]) b[0] = x; if (x > b[1]) b[1] = x;
+                if (y < b[2]) b[2] = y; if (y > b[3]) b[3] = y;
+                if (z < b[4]) b[4] = z; if (z > b[5]) b[5] = z;
+                for (var dz = -1; dz <= 1; dz++) {
+                    var zz = z + dz; if (zz < 0 || zz >= nz) continue;
+                    for (var dy = -1; dy <= 1; dy++) {
+                        var yy = y + dy; if (yy < 0 || yy >= ny) continue;
+                        for (var dx = -1; dx <= 1; dx++) {
+                            var xx = x + dx; if (xx < 0 || xx >= nx) continue;
+                            var ni = xx + yy * nx + zz * nxy;
+                            if (counts[ni] >= T && !labels[ni]) { labels[ni] = next; queue[tail++] = ni; }
+                        }
+                    }
+                }
+            }
+            sizes.push(size); bb.push(b); next++;
+        }
+        if (next === 1) return fallback;
+
+        // 最大成分（床・壁・天井の殻）を本体とし、その近く（0.75m 以内）にある密な成分は
+        // バルコニー・窓際の什器などとみなして取り込む。離れた屋外の建物・空は捨てる。
+        var best = 1;
+        for (var L = 2; L < next; L++) if (sizes[L] > sizes[best]) best = L;
+        var cur = bb[best].slice(), used = new Uint8Array(next); used[best] = 1;
+        var gap = Math.ceil(0.75 / cell), changed = true, merged = 0;
+        while (changed) {
+            changed = false;
+            for (var L2 = 1; L2 < next; L2++) {
+                if (used[L2]) continue;
+                var o = bb[L2];
+                if (o[0] > cur[1] + gap || o[1] < cur[0] - gap ||
+                    o[2] > cur[3] + gap || o[3] < cur[2] - gap ||
+                    o[4] > cur[5] + gap || o[5] < cur[4] - gap) continue;
+                if (o[0] < cur[0]) cur[0] = o[0]; if (o[1] > cur[1]) cur[1] = o[1];
+                if (o[2] < cur[2]) cur[2] = o[2]; if (o[3] > cur[3]) cur[3] = o[3];
+                if (o[4] < cur[4]) cur[4] = o[4]; if (o[5] > cur[5]) cur[5] = o[5];
+                used[L2] = 1; changed = true; merged++;
+            }
+        }
+        var pad = 0.3;
+        var out = {
+            minX: Math.max(fallback.minX, ox + cur[0] * cell - pad),
+            maxX: Math.min(fallback.maxX, ox + (cur[1] + 1) * cell + pad),
+            minY: Math.max(fallback.minY, oy + cur[2] * cell - pad),
+            maxY: Math.min(fallback.maxY, oy + (cur[3] + 1) * cell + pad),
+            minZ: Math.max(fallback.minZ, oz + cur[4] * cell - pad),
+            maxZ: Math.min(fallback.maxZ, oz + (cur[5] + 1) * cell + pad)
+        };
+        // 退行ガード: 本体が小さすぎる（床面 1m 四方未満）なら従来の bbox をそのまま使う
+        if (out.maxX - out.minX < 1 || out.maxZ - out.minZ < 1 || out.maxY - out.minY < 0.5) return fallback;
+        console.log('[Collider] 本体の範囲:',
+            (out.maxX - out.minX).toFixed(2) + ' x ' + (out.maxY - out.minY).toFixed(2) + ' x ' + (out.maxZ - out.minZ).toFixed(2) + ' m',
+            '(パーセンタイル bbox ' + (fallback.maxX - fallback.minX).toFixed(2) + ' x ' + (fallback.maxY - fallback.minY).toFixed(2) + ' x ' + (fallback.maxZ - fallback.minZ).toFixed(2) + ' m,',
+            '密度しきい値 ' + T + ' 点/' + (cell * 100).toFixed(0) + 'cm セル, 成分 ' + (next - 1) + ', 取り込み ' + merged + ')');
+        return out;
+    }
+
     // ================================================================
     // Phase 1: 真の 3D カプセル判定用ヘルパー（_voxels / SVO 共通）
     // ================================================================
@@ -774,6 +858,7 @@ window.Collider = (function () {
             var PARSE_BATCH = 3000;
             var BBOX_BATCH  = 3000;
             var HIST_BATCH  = 3000;
+            var COARSE_BATCH = 20000;   // 粗いセルに数えるだけなので多めでも ~4ms に収まる
             var VOXEL_BATCH = 3000;
             var HMAP_ROWS   = 3;
 
@@ -921,7 +1006,7 @@ window.Collider = (function () {
                     histIdx = end;
                     if (histIdx < n) {
                         if (onProgress) onProgress(
-                            35 + Math.round(histIdx / n * 10),
+                            35 + Math.round(histIdx / n * 5),
                             'バウンディングボックスを精密化中...'
                         );
                         setTimeout(histStep, 0);
@@ -959,6 +1044,63 @@ window.Collider = (function () {
                     minX -= pad; maxX += pad;
                     minY -= pad; maxY += pad;
                     minZ -= pad; maxZ += pad;
+
+                    // ヒストグラムは不要になったので解放
+                    histX = histY = histZ = null;
+
+                    // Phase 2c へ: パーセンタイル bbox を粗い密度格子でさらに絞り込む
+                    pctBounds = { minX: minX, maxX: maxX, minY: minY, maxY: maxY, minZ: minZ, maxZ: maxZ };
+                    cMinX = minX; cMinY = minY; cMinZ = minZ;
+                    var csx = maxX - minX, csy = maxY - minY, csz = maxZ - minZ;
+                    COARSE_M = 0.25;
+                    if (csx * csy * csz / (COARSE_M * COARSE_M * COARSE_M) > COARSE_MAX_CELLS) {
+                        COARSE_M = Math.cbrt(csx * csy * csz / COARSE_MAX_CELLS);
+                    }
+                    cnx = Math.max(1, Math.ceil(csx / COARSE_M));
+                    cny = Math.max(1, Math.ceil(csy / COARSE_M));
+                    cnz = Math.max(1, Math.ceil(csz / COARSE_M));
+                    coarse = new Uint32Array(cnx * cny * cnz);
+                    coarseIdx = 0;
+                    if (onProgress) onProgress(40, '本体の範囲を推定中...');
+                    setTimeout(coarseStep, 0);
+                }
+
+                // --- Phase 2c: 密度クラスタで「本体」の範囲を決める（窓越しの屋外・空のハロー除去）---
+                // パーセンタイル切り捨て（0.3%）はハローの点がそれより多いと効かない。
+                // 10月1日の物件では本体 5x10m に対し bbox が 41x32m（1 ボクセル 21cm）になり、
+                // 廊下が丸ごと壁扱いで通れなくなった。粗い 3D セル（0.25m）で点を数え、
+                // 面として密なセルの最大連結成分（床・壁・天井は一続き）を本体とする。
+                // 空・屋外のハローは 1 セルあたり数点しか無いので外れる。
+                var pctBounds, cMinX, cMinY, cMinZ, COARSE_M, cnx, cny, cnz, coarse;
+                var COARSE_MAX_CELLS = 8000000;
+                var coarseIdx = 0;
+
+                function coarseStep() {
+                    var end = Math.min(coarseIdx + COARSE_BATCH, n);
+                    var nxy = cnx * cny;
+                    for (var i = coarseIdx; i < end; i++) {
+                        if (radii[i] < 0) continue;
+                        var c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
+                        var ix = Math.floor((c.cx - cMinX) / COARSE_M);
+                        var iy = Math.floor((c.cy - cMinY) / COARSE_M);
+                        var iz = Math.floor((c.cz - cMinZ) / COARSE_M);
+                        if (ix < 0 || iy < 0 || iz < 0 || ix >= cnx || iy >= cny || iz >= cnz) continue;
+                        coarse[ix + iy * cnx + iz * nxy]++;
+                    }
+                    coarseIdx = end;
+                    if (coarseIdx < n) {
+                        if (onProgress) onProgress(
+                            40 + Math.round(coarseIdx / n * 5), '本体の範囲を推定中...'
+                        );
+                        setTimeout(coarseStep, 0);
+                        return;
+                    }
+                    var fb = denseClusterBounds(coarse, cnx, cny, cnz, COARSE_M, cMinX, cMinY, cMinZ, pctBounds);
+                    coarse = null;
+                    finishBounds(fb.minX, fb.maxX, fb.minY, fb.maxY, fb.minZ, fb.maxZ);
+                }
+
+                function finishBounds(minX, maxX, minY, maxY, minZ, maxZ) {
                     var sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
                     _bounds = { minX:minX, maxX:maxX, minY:minY, maxY:maxY,
                                 minZ:minZ, maxZ:maxZ, sx:sx, sy:sy, sz:sz };
@@ -967,9 +1109,6 @@ window.Collider = (function () {
                     _setGrid(Math.max(GRID_MIN, Math.min(GRID_MAX, Math.round(maxDim / TARGET_VOXEL_M))));
                     console.log('[Collider] adaptive grid =', GRID, '(maxDim=' + maxDim.toFixed(2) + 'm, ~' + (maxDim / GRID * 100).toFixed(1) + 'cm/voxel)');
                     _voxels = new Uint16Array(GRID * GRID * GRID);  // 占有 → 点数カウント
-
-                    // ヒストグラムは不要になったので解放
-                    histX = histY = histZ = null;
 
                     if (onProgress) onProgress(45, 'ボクセル密度を集計中...');
                     setTimeout(voxelStep, 0);
@@ -982,7 +1121,16 @@ window.Collider = (function () {
                 function voxelStep() {
                     var end = Math.min(voxelIdx + VOXEL_BATCH, n);
                     var b = _bounds;
-                    var voxelSizeM = Math.min(b.sx, b.sy, b.sz) / GRID;
+                    // ボクセルは軸ごとに大きさが違う（グリッド数は全軸同じで bbox は細長い）。
+                    // スタンプ半径は軸ごとにボクセル数へ換算し、上限は物理長 STAMP_CAP_M で
+                    // 揃える。旧実装は最短辺基準の「3 ボクセル」を全軸に当てていたため、
+                    // 細長い bbox では長辺方向だけ壁が数倍太り、その向きのドアが狭くなっていた。
+                    var vwX = b.sx / GRID, vwY = b.sy / GRID, vwZ = b.sz / GRID;
+                    var STAMP_CAP_H = 0.075;   // 水平方向の膨らみ上限 (m) ＝ 壁の太り＝通路の狭まり
+                    var STAMP_CAP_V = 0.075;   // 垂直方向の膨らみ上限 (m) ＝ 床・天井の厚み
+                    var capX = Math.max(1, Math.round(STAMP_CAP_H / vwX));
+                    var capY = Math.max(1, Math.round(STAMP_CAP_V / vwY));
+                    var capZ = Math.max(1, Math.round(STAMP_CAP_H / vwZ));
                     for (var i = voxelIdx; i < end; i++) {
                         if (radii[i] < 0) continue;  // opacity フィルタ
                         var c = applyCorrection(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]);
@@ -997,23 +1145,28 @@ window.Collider = (function () {
                         // ガウシアン半径分のスタンプ。3DGS では平らな壁面が大きな
                         // ガウシアン 1 個でカバーされ、中心点だけ集計すると密度不足で
                         // 抜け落ちる。半径分のボクセルに書き込むことで壁を埋める。
-                        // 球状で書き込み、最大 3 ボクセル（〜30cm）で頭打ち。
-                        var radVox = radii[i] > 0
-                            ? Math.min(3, Math.round(radii[i] / voxelSizeM))
-                            : 0;
-                        if (radVox === 0) {
+                        // 楕円体（軸ごとのボクセル半径）で書き込み、物理長 STAMP_CAP_M で頭打ち。
+                        var rvx = 0, rvy = 0, rvz = 0;
+                        if (radii[i] > 0) {
+                            rvx = Math.min(capX, Math.round(radii[i] / vwX));
+                            rvy = Math.min(capY, Math.round(radii[i] / vwY));
+                            rvz = Math.min(capZ, Math.round(radii[i] / vwZ));
+                        }
+                        if (rvx === 0 && rvy === 0 && rvz === 0) {
                             var idx = vi(vx, vy, vz);
                             if (_voxels[idx] < 0xFFFF) _voxels[idx]++;
                         } else {
-                            var rSq = radVox * radVox;
-                            for (var dz_ = -radVox; dz_ <= radVox; dz_++) {
+                            var qx = rvx ? 1 / (rvx * rvx) : 0;
+                            var qy = rvy ? 1 / (rvy * rvy) : 0;
+                            var qz = rvz ? 1 / (rvz * rvz) : 0;
+                            for (var dz_ = -rvz; dz_ <= rvz; dz_++) {
                                 var nvz = vz + dz_;
                                 if (nvz < 0 || nvz >= GRID) continue;
-                                for (var dy_ = -radVox; dy_ <= radVox; dy_++) {
+                                for (var dy_ = -rvy; dy_ <= rvy; dy_++) {
                                     var nvy = vy + dy_;
                                     if (nvy < 0 || nvy >= GRID) continue;
-                                    for (var dx_ = -radVox; dx_ <= radVox; dx_++) {
-                                        if (dx_*dx_ + dy_*dy_ + dz_*dz_ > rSq) continue;
+                                    for (var dx_ = -rvx; dx_ <= rvx; dx_++) {
+                                        if (dx_*dx_*qx + dy_*dy_*qy + dz_*dz_*qz > 1.0001) continue;
                                         var nvx = vx + dx_;
                                         if (nvx < 0 || nvx >= GRID) continue;
                                         var idx2 = vi(nvx, nvy, nvz);
