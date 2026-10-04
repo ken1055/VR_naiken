@@ -23,7 +23,7 @@ npm run dev                     # http://127.0.0.1:8787
 ```
 
 - `.dev.vars`（git非管理）: `ADMIN_TOKEN=dev-local-token` / `VIEWER_ORIGIN=http://127.0.0.1:8099`
-- ビューア側は別ターミナルで `python -m http.server 8099 --directory vr-naiken`
+- ビューア側は別ターミナルで `node vr-naiken/tools/serve.js 8099`（閲覧だけなら `python -m http.server 8099 --directory vr-naiken` でも可）
 - Claude Code からは `.claude/launch.json` の `vr-naiken` と `platform-worker` を preview 起動
 
 ## 本番デプロイ（初回）

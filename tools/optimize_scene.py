@@ -13,18 +13,20 @@ splat-transform の圧縮 PLY 形式に変換すると 16 バイト/スプラッ
 
 前提となる処理順序:
     1. 水平化   python tools/level_gaussian_ply.py point_cloud.ply -o point_cloud.ply
-    2. hmap生成 admin.html でコリジョン生成 → point_cloud.hmap.json
+    2. hmap生成 node tools/build_collider.js point_cloud.ply → point_cloud.hmap.json
+                （このスクリプトが .hmap.json 不在なら自動で実行する。admin.html でも可）
     3. 圧縮     python tools/optimize_scene.py point_cloud.ply   ← このスクリプト
     4. アップロード（出力されたコマンドを実行）
 
-3 を先にやると 1・2 が壊れる。level_gaussian_ply.py と admin の
-コリジョン生成はどちらも「全プロパティが float の PLY」を前提に
-自前パースしているため、圧縮 PLY を入力にできない。
+3 を先にやると 1・2 が壊れる。level_gaussian_ply.py と build_collider.js
+（admin のコリジョン生成と同じ collider.js）はどちらも「全プロパティが float の
+PLY」を前提に自前パースしているため、圧縮 PLY を入力にできない。
 
 使い方:
     python tools/optimize_scene.py <point_cloud.ply>
     python tools/optimize_scene.py <物件フォルダ>        # 中の .ply を自動で探す
     python tools/optimize_scene.py <...> --bucket gs://vr_naiken_properties/物件名
+    python tools/optimize_scene.py <...> --rebuild-collider   # .hmap.json を作り直す
 """
 import argparse
 import gzip
@@ -74,6 +76,33 @@ def gzip_ratio(path):
     return size
 
 
+def ensure_hmap(ply, base, rebuild, skip):
+    """圧縮の前に .hmap.json を用意する（原本 PLY からしか作れないため）。
+
+    無ければ node tools/build_collider.js で生成する。node が無い環境では
+    admin.html での生成を案内して止める（--skip-collider で続行可）。
+    """
+    hmap = base + ".hmap.json"
+    if skip:
+        return
+    if os.path.exists(hmap) and not rebuild:
+        print("コリジョン: %s（既存を使用。作り直すなら --rebuild-collider）"
+              % os.path.basename(hmap))
+        return
+    node = shutil.which("node")
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_collider.js")
+    if not node or not os.path.exists(script):
+        sys.exit(
+            ".hmap.json がありません: %s\n"
+            "  node が見つからないため自動生成できません。admin.html の「コリジョン生成」で\n"
+            "  作るか、node を入れて再実行してください（--skip-collider で圧縮だけ続行）。" % hmap
+        )
+    print("コリジョン: %s を生成中（build_collider.js）..." % os.path.basename(hmap))
+    r = subprocess.run([node, script, ply, "-w", "-q"])
+    if r.returncode != 0 or not os.path.exists(hmap):
+        sys.exit("コリジョン生成に失敗しました（終了コード %d）" % r.returncode)
+
+
 def main():
     ap = argparse.ArgumentParser(description="シーンの転送量削減")
     ap.add_argument("target", help="point_cloud.ply または物件フォルダ")
@@ -81,6 +110,10 @@ def main():
                     help="アップロード先 (例 gs://vr_naiken_properties/物件名)")
     ap.add_argument("-w", "--overwrite", action="store_true",
                     help="既存の .compressed.ply を上書きする")
+    ap.add_argument("--rebuild-collider", action="store_true",
+                    help="既存の .hmap.json があっても作り直す")
+    ap.add_argument("--skip-collider", action="store_true",
+                    help=".hmap.json の自動生成をしない")
     args = ap.parse_args()
 
     ply = find_ply(args.target)
@@ -99,13 +132,35 @@ def main():
             "  npm install -g @playcanvas/splat-transform"
         )
 
+    # 圧縮 PLY からはコリジョンを作れないので、圧縮の前に必ず済ませる
+    ensure_hmap(ply, base, args.rebuild_collider, args.skip_collider)
+
     before = os.path.getsize(ply)
     print("入力: %s (%s)" % (os.path.basename(ply), mb(before)))
     print("圧縮中...")
-    cmd = ["splat-transform", "--no-tty", "-w", ply, out]
-    r = subprocess.run(cmd, shell=(os.name == "nt"))
-    if r.returncode != 0 or not os.path.exists(out):
+    # 途中で失敗しても壊れた .compressed.ply を残さないよう、一時名に書いてから置き換える。
+    # splat-transform は出力名が「.compressed.ply」で終わるときだけ圧縮形式で書くので、
+    # 一時名もその末尾を保つ（.tmp.ply にすると無圧縮のまま出てしまう）。
+    tmp_out = base + ".tmp.compressed.ply"
+    if os.path.exists(tmp_out):
+        os.remove(tmp_out)
+    cmd = ["splat-transform", "--no-tty", "-w", ply, tmp_out]
+    if os.name == "nt":
+        # splat-transform は .cmd なので cmd.exe を経由する。引数は自分で "…" で囲む
+        # （subprocess は空白のある引数しか引用しないので、& を含むパスで壊れる）。
+        # " と % は引用符の中でも cmd に解釈されるので拒否する。
+        for a in (ply, tmp_out):
+            if '"' in a or "%" in a:
+                sys.exit('パスに " や %% を含められません: %s' % a)
+        cmd = " ".join('"%s"' % a for a in cmd)
+        r = subprocess.run(cmd, shell=True)
+    else:
+        r = subprocess.run(cmd)
+    if r.returncode != 0 or not os.path.exists(tmp_out):
+        if os.path.exists(tmp_out):
+            os.remove(tmp_out)
         sys.exit("splat-transform が失敗しました")
+    os.replace(tmp_out, out)
 
     after = os.path.getsize(out)
     print("出力: %s (%s)  →  %.0f%% 削減"

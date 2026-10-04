@@ -15,6 +15,9 @@ PortalCam などが出力する 3DGS 形式 PLY（x,y,z + rot_0..3 クォータ�
 使い方:
   python tools/level_gaussian_ply.py input.ply            # → input_leveled.ply
   python tools/level_gaussian_ply.py input.ply -o out.ply
+  python tools/level_gaussian_ply.py input.ply -o input.ply --skip-if-leveled
+      # 書き出した PLY にはヘッダーに「comment leveled vr-naiken ...」の印が付く。
+      # --skip-if-leveled は印のある PLY を何もせず終了する（パイプラインの再実行用）
 """
 import argparse
 import os
@@ -22,6 +25,19 @@ import sys
 import numpy as np
 
 sys.stdout.reconfigure(encoding="utf-8")
+
+LEVELED_MARK = "comment leveled vr-naiken"   # 水平化済みの印（ヘッダー行の先頭）
+
+
+def is_leveled(path):
+    """ヘッダーに水平化済みの印があるか（頂点データは読まない）"""
+    with open(path, "rb") as f:
+        head = f.read(65536)
+    end = head.find(b"end_header")
+    if end < 0:
+        return False
+    return any(l.strip().startswith(LEVELED_MARK.encode())
+               for l in head[:end].splitlines())
 
 
 def read_ply(path):
@@ -107,8 +123,14 @@ def main():
     ap = argparse.ArgumentParser(description="3DGS PLY の傾き自動補正")
     ap.add_argument("input")
     ap.add_argument("-o", "--output", default=None)
+    ap.add_argument("--skip-if-leveled", action="store_true",
+                    help="水平化済みの印がある PLY は何もせず終了する")
     args = ap.parse_args()
     out_path = args.output or os.path.splitext(args.input)[0] + "_leveled.ply"
+
+    if args.skip_if_leveled and is_leveled(args.input):
+        print(f"水平化済み（印あり）のためスキップ: {args.input}")
+        return
 
     hlines, props, data = read_ply(args.input)
     i = {p: k for k, p in enumerate(props)}
@@ -193,10 +215,19 @@ def main():
         parts = l.split()
         if len(parts) == 3 and parts[0] == "comment" and parts[1] in upd:
             l = f"comment {parts[1]} {upd[parts[1]]:.7f}"
+        if l.startswith(LEVELED_MARK):
+            continue   # 再水平化時は古い印を捨てて付け直す
         new_hlines.append(l)
-    with open(out_path, "wb") as f:
-        f.write(("\n".join(new_hlines) + "\n").encode("ascii"))
+    # 水平化済みの印を end_header の直前に入れる（PLY のコメント行は読み手に無視される）
+    new_hlines.insert(len(new_hlines) - 1, f"{LEVELED_MARK} tilt={tilt:.2f} yaw={yaw:.2f}")
+    header_bytes = ("\n".join(new_hlines) + "\n").encode("ascii")   # 失敗するなら書く前に
+    # -o に入力と同じパスを渡す運用（原本を上書き）なので、書き込み途中で落ちても
+    # 原本が消えないよう一時ファイルに書いてから置き換える
+    tmp_path = out_path + ".tmp"
+    with open(tmp_path, "wb") as f:
+        f.write(header_bytes)
         out.astype("<f4").tofile(f)
+    os.replace(tmp_path, out_path)
     print(f"書き出し: {out_path}")
 
 
