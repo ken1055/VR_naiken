@@ -34,7 +34,20 @@ https://<worker>/p/{id}/qr.svg   ← 店頭ポップ・チラシ用 QR
 流入元は `?s=sns|portal|qr|mail|web` で記録され、経路別の閲覧数が管理 API で集計できます。
 登録・デプロイ手順は [worker/README.md](worker/README.md) を参照。
 
-### 開発・検証用（直接指定）
+### 共有 URL（直接指定）
+
+```
+https://ken1055.github.io/VR_naiken/?f=<バケット内のフォルダ>
+例: https://ken1055.github.io/VR_naiken/?f=10月1日/部屋
+```
+
+- `f` … `gs://vr_naiken_properties/` 配下のフォルダ。中の `manifest.json` に従い、無ければ `point_cloud.compressed.ply` → `point_cloud.ply` の順に探す（`?f=10月1日/部屋/point_cloud.compressed.ply` のようにファイルまで書いても可）
+- `t` … 表示する物件名（省略時はフォルダ名の末尾）
+- SNS に貼るなら公開準備の物件名を英数字（例 `oct01`）にすると `?f=oct01` の短い URL になる。日本語名はブラウザが `%E6...` に変換するため長く見える
+- 物件一覧スプレッドシートで C 列に自動生成するなら `tools/sheet_viewer_url.gs`（Apps Script に貼る。B 列の GCS URL から `?f=` 形式を作る）
+- 物件ごとの固有 URL `/p/{id}`（OGP・閲覧数つき）は `worker/README.md`（Cloudflare Worker の初回デプロイが必要）
+
+従来の直接指定も使える:
 
 ```
 https://ken1055.github.io/VR_naiken/?url=<PLYのURL>&title=<物件名>

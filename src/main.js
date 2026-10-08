@@ -203,20 +203,40 @@
     }
 
     // ---- GCS フォルダURL から manifest.json を読んでロード ----
-    // フォルダ内に {"ply": "ファイル名.ply"} の manifest.json が必要
+    // フォルダ内に {"ply": "ファイル名.ply"} の manifest.json があればそれに従う。
+    // 無ければ point_cloud.compressed.ply → point_cloud.ply の順に探す
+    // （manifest.json を置く前に手動でアップロードした物件や、?f= の短縮 URL 用）。
     // listing API を使わないためバケット一覧権限が不要
     function _loadFromFolderURL(folderUrl) {
         var base = folderUrl.split('?')[0].replace(/\/$/, '');
         var manifestUrl = base + '/manifest.json';
+        var FALLBACK_PLYS = ['point_cloud.compressed.ply', 'point_cloud.ply'];
+
+        function exists(url) {
+            return fetch(url, { method: 'HEAD' })
+                .then(function (r) { return r.ok; }, function () { return false; });
+        }
+        function pickFallback(i) {
+            if (i >= FALLBACK_PLYS.length) {
+                throw new Error(
+                    'manifest.json も point_cloud(.compressed).ply も見つかりません\n' +
+                    'フォルダ内に manifest.json を配置してください'
+                );
+            }
+            return exists(base + '/' + FALLBACK_PLYS[i]).then(function (ok) {
+                return ok ? { ply: FALLBACK_PLYS[i] } : pickFallback(i + 1);
+            });
+        }
 
         UI.showLoading('読み込み中...');
         fetch(manifestUrl)
             .then(function (r) {
-                if (!r.ok) throw new Error(
-                    'manifest.json が見つかりません (HTTP ' + r.status + ')\n' +
-                    'フォルダ内に manifest.json を配置してください'
-                );
-                return r.json();
+                if (r.ok) return r.json();
+                if (r.status !== 404) throw new Error('manifest.json を取得できません (HTTP ' + r.status + ')');
+                return null;
+            }, function () { return null; })   // CORS 無しの 404 等は fetch 自体が失敗する
+            .then(function (manifest) {
+                return manifest || pickFallback(0);
             })
             .then(function (manifest) {
                 if (!manifest.ply) throw new Error('manifest.json に "ply" フィールドがありません');
@@ -290,7 +310,27 @@
 
             var params = new URLSearchParams(window.location.search);
             var paramURL   = params.get('url');
-            var paramTitle = params.get('title');
+            var paramTitle = params.get('title') || params.get('t');
+
+            // 短縮形 ?f=<バケット内のフォルダ>（SNS に貼る URL を短くする）
+            //   ?f=10月1日/部屋 → https://storage.googleapis.com/vr_naiken_properties/10月1日/部屋/
+            // 既定バケット配下しか指せないので許可リスト判定は自動的に通る。
+            // タイトル未指定ならフォルダ名の末尾を使う。
+            var paramFolder = params.get('f');
+            if (!paramURL && paramFolder) {
+                var segs = paramFolder.split('/').filter(function (s) { return s !== ''; });
+                var safe = segs.length > 0 &&
+                    segs.every(function (s) { return s !== '.' && s !== '..'; });
+                if (safe) {
+                    // 末尾が .ply/.splat ならファイル直指定（旧リンクのパスをそのまま貼った場合）
+                    var isFile = /\.(ply|splat)$/i.test(segs[segs.length - 1]);
+                    paramURL = _ALLOWED_URL_PREFIXES[0] + segs.map(encodeURIComponent).join('/') + (isFile ? '' : '/');
+                    if (!paramTitle) paramTitle = segs[isFile ? segs.length - 2 : segs.length - 1] || segs[0];
+                } else {
+                    console.warn('[Param] 不正なフォルダ指定:', paramFolder);
+                    UI.showError('この URL からは読み込めません。');
+                }
+            }
 
             // URLSearchParams.get() はデコード済みの値を返すため再デコードしない
             // （% を含むファイル名・物件名で URIError になり黙って読み込み失敗する）
