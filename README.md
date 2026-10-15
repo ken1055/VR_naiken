@@ -5,6 +5,7 @@
 
 - 公開 URL: `https://ken1055.github.io/VR_naiken/`
 - 配信データ: GCS バケット `vr_naiken_properties`
+- プロジェクト紹介（ポートフォリオ）: [portfolio.html](portfolio.html) — `https://ken1055.github.io/VR_naiken/portfolio.html`
 
 ---
 
@@ -222,6 +223,7 @@ index.html の `<script src="src/*.js?v=YYYYMMDD">` の **`?v=` は src/*.js を
 ```
 vr-naiken/
 ├── index.html               # 閲覧者ページ（ウォークモード・OGP・GA4）
+├── portfolio.html           # プロジェクト紹介ページ（ポートフォリオ・静的）
 ├── admin.html               # 管理ツール（ローカル専用・git 非管理）
 ├── vendor/
 │   └── playcanvas-2.7.4.min.js  # PlayCanvas エンジン（同梱・バージョン固定）
