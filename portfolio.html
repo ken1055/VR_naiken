@@ -3,44 +3,44 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VR 内見ビューア — ポートフォリオ</title>
-<meta name="description" content="3D Gaussian Splatting で撮影した実物件をブラウザだけで歩き回れる内見ビューア。個人開発プロジェクトの概要・技術スタック・設計上の工夫をまとめたポートフォリオページ。">
-
+<title>開発実績ポートフォリオ — EC・業務システム・AI</title>
+<meta name="description" content="越境 EC サイト、FC 本部・営業組織の業務システム、会員管理アプリ、3D 内見ビューア、AI 肌診断など 9 件の開発実績。企画・設計・実装・デプロイ・運用まで単独で担当。">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="VR 内見ビューア">
-<meta property="og:title" content="VR 内見ビューア — ポートフォリオ">
-<meta property="og:description" content="3DGS で撮影した実物件をブラウザだけで歩き回れる内見ビューア。技術スタック・設計・工夫をまとめました。">
+<meta property="og:title" content="開発実績ポートフォリオ — EC・業務システム・AI">
+<meta property="og:description" content="EC サイトから社内業務システム、AI プロダクトまで。企画から運用まで一人で形にした 9 件の実績。">
 <meta property="og:url" content="https://ken1055.github.io/VR_naiken/portfolio.html">
-<meta property="og:image" content="https://ken1055.github.io/VR_naiken/assets/ogp.png">
+<meta property="og:image" content="https://ken1055.github.io/VR_naiken/assets/portfolio/esim.jpg">
 <meta name="twitter:card" content="summary_large_image">
 
 <style>
   :root {
-    --bg: #0b1020;
-    --bg-2: #111a30;
-    --card: #141f3a;
-    --line: #243356;
-    --text: #e8edf7;
-    --muted: #9aa8c7;
-    --accent: #2ee6b8;
+    --bg: #0c1120;
+    --bg-2: #121a30;
+    --card: #151f3a;
+    --line: #26375c;
+    --text: #e9eef8;
+    --muted: #9fadcb;
+    --accent: #ffb547;
     --accent-2: #7cc4ff;
-    --accent-ink: #052b22;
-    --grid: rgba(46, 230, 184, 0.08);
-    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    --accent-3: #2ee6b8;
+    --accent-ink: #1d1300;
+    --grid: rgba(255, 181, 71, 0.06);
+    --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-      --bg: #f6f8fc;
+      --bg: #f7f8fc;
       --bg-2: #ffffff;
       --card: #ffffff;
-      --line: #dbe2f0;
-      --text: #141a2c;
-      --muted: #5b6784;
-      --accent: #0f9f7e;
+      --line: #dde3f0;
+      --text: #151b2d;
+      --muted: #5c6886;
+      --accent: #d97b06;
       --accent-2: #2a6fd6;
+      --accent-3: #0f9f7e;
       --accent-ink: #ffffff;
-      --grid: rgba(15, 159, 126, 0.08);
-      --shadow: 0 10px 30px rgba(20, 26, 44, 0.08);
+      --grid: rgba(217, 123, 6, 0.07);
+      --shadow: 0 12px 32px rgba(21, 27, 45, 0.08);
     }
   }
 
@@ -50,216 +50,172 @@
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
-    line-height: 1.75;
+    line-height: 1.8;
     -webkit-font-smoothing: antialiased;
   }
   a { color: var(--accent-2); text-decoration: none; }
   a:hover { text-decoration: underline; }
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.9em;
+    font-size: 0.88em;
     background: var(--bg-2);
     border: 1px solid var(--line);
     border-radius: 4px;
     padding: 0.05em 0.4em;
   }
+  img { max-width: 100%; display: block; }
 
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
   section { padding: 64px 0; }
   section + section { border-top: 1px solid var(--line); }
-  h2 {
-    font-size: 1.6rem;
-    letter-spacing: 0.02em;
-    margin-bottom: 8px;
-  }
-  .lead { color: var(--muted); margin-bottom: 32px; max-width: 720px; }
+  h2 { font-size: 1.65rem; letter-spacing: 0.02em; margin-bottom: 8px; }
+  .lead { color: var(--muted); margin-bottom: 32px; max-width: 760px; }
   .eyebrow {
-    display: inline-block;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 8px;
+    display: inline-block; font-size: 0.75rem; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px;
   }
 
-  /* ---- nav ---- */
+  /* nav */
   nav {
     position: sticky; top: 0; z-index: 20;
-    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
   }
-  nav .wrap {
-    display: flex; align-items: center; justify-content: space-between;
-    height: 56px; gap: 16px;
-  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 16px; }
   nav .brand { font-weight: 700; color: var(--text); white-space: nowrap; }
   nav .brand span { color: var(--accent); }
   nav ul { display: flex; gap: 20px; list-style: none; overflow-x: auto; }
   nav li a { color: var(--muted); font-size: 0.9rem; white-space: nowrap; }
   nav li a:hover { color: var(--text); text-decoration: none; }
 
-  /* ---- hero ---- */
+  /* hero */
   .hero {
-    position: relative;
-    padding: 88px 0 72px;
+    position: relative; padding: 84px 0 64px;
     background:
       linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 48px 48px,
       linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 48px 48px,
-      radial-gradient(900px 400px at 20% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+      radial-gradient(900px 420px at 15% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
       var(--bg);
     border-bottom: 1px solid var(--line);
   }
-  .hero h1 {
-    font-size: clamp(2rem, 5vw, 3.2rem);
-    line-height: 1.2;
-    letter-spacing: 0.01em;
-    margin: 8px 0 16px;
-  }
+  .hero h1 { font-size: clamp(1.9rem, 4.6vw, 3rem); line-height: 1.25; margin: 8px 0 16px; }
   .hero h1 em { font-style: normal; color: var(--accent); }
-  .hero p.sub { font-size: 1.1rem; color: var(--muted); max-width: 640px; }
+  .hero p.sub { font-size: 1.08rem; color: var(--muted); max-width: 700px; }
   .tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 28px; }
-  .tag {
-    font-size: 0.8rem;
-    padding: 4px 10px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    color: var(--muted);
-    background: var(--bg-2);
-  }
+  .tag { font-size: 0.8rem; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--bg-2); }
   .cta { display: flex; flex-wrap: wrap; gap: 12px; }
   .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 12px 20px;
-    border-radius: 10px;
-    font-weight: 700;
-    border: 1px solid var(--line);
-    background: var(--bg-2);
-    color: var(--text);
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 10px;
+    font-weight: 700; border: 1px solid var(--line); background: var(--bg-2); color: var(--text);
     transition: transform 0.12s ease, box-shadow 0.12s ease;
   }
   .btn:hover { text-decoration: none; transform: translateY(-1px); box-shadow: var(--shadow); }
   .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .btn.small { padding: 8px 14px; font-size: 0.88rem; }
 
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 12px;
-    margin-top: 44px;
-  }
-  .stat {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 16px;
-  }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 44px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
   .stat b { display: block; font-size: 1.7rem; line-height: 1.1; color: var(--accent); }
   .stat span { font-size: 0.85rem; color: var(--muted); }
 
-  /* ---- cards ---- */
-  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 22px;
-  }
+  /* cards */
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
   .card h3 { font-size: 1.05rem; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
   .card p { color: var(--muted); font-size: 0.95rem; }
+  .card ul { padding-left: 1.2em; color: var(--muted); font-size: 0.93rem; }
+  .card li + li { margin-top: 4px; }
+  .card .ref { margin-top: 10px; font-size: 0.82rem; color: var(--accent-3); font-weight: 700; }
   .icon {
-    flex: none;
-    width: 34px; height: 34px;
-    border-radius: 9px;
-    display: grid; place-items: center;
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    color: var(--accent);
+    flex: none; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent);
   }
   .icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-  /* ---- problem / solution ---- */
-  .compare { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-  .compare .card h3 { font-size: 1rem; }
-  .compare ul { padding-left: 1.2em; color: var(--muted); font-size: 0.95rem; }
-  .compare li + li { margin-top: 6px; }
-  .compare .after { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  /* works */
+  .work {
+    display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+    padding: 28px; margin-bottom: 20px; overflow: hidden;
+  }
+  .work.flip .media { order: 2; }
+  .work .media { display: grid; gap: 10px; align-content: start; }
+  .work .media img, .work .media .ph {
+    width: 100%; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-2);
+  }
+  .work > div { min-width: 0; }
+  .work .media .ph {
+    min-height: 280px; display: grid; place-items: center; padding: 24px 20px; text-align: center;
+    color: var(--muted); font-size: 0.9rem;
+    background:
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 24px 24px, var(--bg-2);
+  }
+  .work .media .ph b { display: block; color: var(--text); font-size: 1.25rem; margin-bottom: 4px; }
+  .work .media .ph .mini { font-size: 0.8rem; opacity: 0.8; margin-top: 8px; line-height: 1.5; }
+  .work .media .ph .kv { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 10px; }
+  .work .media .ph .kv span { font-size: 0.72rem; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
+  .work .kind { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; color: var(--accent-3); }
+  .work h3 { font-size: 1.35rem; margin: 4px 0 6px; line-height: 1.35; }
+  .work .meta { font-size: 0.82rem; color: var(--muted); margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .work .meta b { color: var(--text); font-weight: 600; }
+  .work p { color: var(--muted); font-size: 0.95rem; }
+  .work p + p { margin-top: 8px; }
+  .work ul { padding-left: 1.2em; color: var(--muted); font-size: 0.93rem; margin-top: 10px; }
+  .work li + li { margin-top: 4px; }
+  .work li b { color: var(--text); font-weight: 600; }
+  .work .stack { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .work .stack span { font-size: 0.76rem; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; color: var(--muted); background: var(--bg-2); }
+  .work .links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .fit {
+    margin-top: 14px; padding: 10px 14px; border-radius: 10px; font-size: 0.88rem;
+    background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text);
+    border-left: 3px solid var(--accent);
+  }
+  .fit b { color: var(--accent); }
 
-  /* ---- tables ---- */
-  table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+  .minis { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
   th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; font-size: 0.85rem; letter-spacing: 0.04em; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.82rem; letter-spacing: 0.04em; }
   td:first-child { white-space: nowrap; font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
   .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
 
-  /* ---- architecture diagram ---- */
-  .arch { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; overflow-x: auto; }
-  .arch svg { width: 100%; min-width: 640px; height: auto; display: block; font-family: inherit; }
-  .arch .box { fill: var(--bg-2); stroke: var(--line); }
-  .arch .box.hl { stroke: var(--accent); }
-  .arch text { fill: var(--text); font-size: 13px; }
-  .arch text.s { fill: var(--muted); font-size: 11px; }
-  .arch .arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; marker-end: url(#ah); }
-  .arch .lbl { fill: var(--accent); font-size: 11px; font-weight: 700; }
+  /* process */
+  .steps { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); counter-reset: s; }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; position: relative; }
+  .step::before {
+    counter-increment: s; content: counter(s, decimal-leading-zero);
+    font-size: 0.78rem; font-weight: 800; color: var(--accent); letter-spacing: 0.1em;
+  }
+  .step h3 { font-size: 1rem; margin: 2px 0 6px; }
+  .step p { color: var(--muted); font-size: 0.9rem; }
 
-  /* ---- challenges ---- */
-  .challenge {
-    display: grid;
-    grid-template-columns: 56px 1fr;
-    gap: 18px;
-    padding: 24px 0;
-    border-top: 1px solid var(--line);
-  }
-  .challenge:last-child { border-bottom: 1px solid var(--line); }
-  .num {
-    font-size: 1.6rem; font-weight: 800; color: var(--accent);
-    font-variant-numeric: tabular-nums; line-height: 1;
-    padding-top: 4px;
-  }
-  .challenge h3 { font-size: 1.1rem; margin-bottom: 6px; }
-  .challenge p { color: var(--muted); font-size: 0.95rem; }
-  .challenge p + p { margin-top: 8px; }
-  .challenge .result {
-    margin-top: 12px;
-    display: inline-block;
-    font-size: 0.85rem;
-    padding: 6px 12px;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    color: var(--text);
-  }
-  .challenge .result b { color: var(--accent); }
-
-  /* ---- timeline ---- */
+  /* timeline */
   .timeline { position: relative; padding-left: 28px; }
-  .timeline::before {
-    content: ""; position: absolute; left: 8px; top: 6px; bottom: 6px;
-    width: 2px; background: var(--line);
-  }
-  .tl { position: relative; padding-bottom: 24px; }
+  .timeline::before { content: ""; position: absolute; left: 8px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+  .tl { position: relative; padding-bottom: 22px; }
   .tl::before {
-    content: ""; position: absolute; left: -25px; top: 8px;
-    width: 12px; height: 12px; border-radius: 50%;
+    content: ""; position: absolute; left: -25px; top: 9px; width: 12px; height: 12px; border-radius: 50%;
     background: var(--accent); box-shadow: 0 0 0 4px var(--bg);
   }
   .tl time { font-size: 0.8rem; font-weight: 700; color: var(--accent); letter-spacing: 0.06em; }
   .tl h3 { font-size: 1rem; margin: 2px 0 4px; }
-  .tl p { color: var(--muted); font-size: 0.95rem; }
+  .tl p { color: var(--muted); font-size: 0.93rem; }
 
-  /* ---- modules ---- */
-  .modules { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  .mod { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--card); font-size: 0.9rem; }
-  .mod code { background: transparent; border: 0; padding: 0; color: var(--accent-2); font-weight: 700; }
-  .mod span { display: block; color: var(--muted); font-size: 0.85rem; }
-
-  /* ---- footer ---- */
   footer { padding: 40px 0 56px; color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); }
   footer .links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; }
+  .note { font-size: 0.82rem; color: var(--muted); margin-top: 18px; }
 
-  @media (max-width: 640px) {
+  @media (max-width: 760px) {
     section { padding: 48px 0; }
-    .hero { padding: 56px 0 48px; }
-    .challenge { grid-template-columns: 40px 1fr; gap: 12px; }
-    .num { font-size: 1.3rem; }
+    .hero { padding: 56px 0 44px; }
+    .work { grid-template-columns: 1fr; padding: 20px; gap: 18px; }
+    .work.flip .media { order: 0; }
     nav ul { gap: 14px; }
   }
 </style>
@@ -268,117 +224,313 @@
 
 <nav>
   <div class="wrap">
-    <a class="brand" href="#top">VR <span>内見</span>ビューア</a>
+    <a class="brand" href="#top">開発実績<span>ポートフォリオ</span></a>
     <ul>
-      <li><a href="#overview">概要</a></li>
-      <li><a href="#features">機能</a></li>
+      <li><a href="#fit">強み</a></li>
+      <li><a href="#works">実績</a></li>
       <li><a href="#stack">技術</a></li>
-      <li><a href="#arch">構成</a></li>
-      <li><a href="#challenges">工夫</a></li>
-      <li><a href="#timeline">経緯</a></li>
+      <li><a href="#process">進め方</a></li>
+      <li><a href="#proposal">ご提案</a></li>
+      <li><a href="#timeline">経歴</a></li>
     </ul>
   </div>
 </nav>
 
 <header class="hero" id="top">
   <div class="wrap">
-    <span class="eyebrow">Portfolio / 個人開発</span>
-    <h1>本物の部屋を、<em>ブラウザだけで歩ける</em>内見体験</h1>
+    <span class="eyebrow">Portfolio</span>
+    <h1>EC サイトも、社内システムも。<br><em>企画から運用まで、一人で形にします。</em></h1>
     <p class="sub">
-      3D Gaussian Splatting（3DGS）で撮影した実物件を、アプリ不要・WebGL2 だけで内見できるビューアです。
-      撮影データの前処理から配信・物件 URL の発行・閲覧計測まで、一人で企画・設計・実装・運用しました。
+      直近 1 年半で、越境 EC サイト・FC 本部の業務システム・営業組織の代理店管理・会員アプリ・3D 内見・AI 肌診断など
+      9 件のプロダクトを、要件整理から設計・実装・デプロイ・運用まで単独で担当してきました。
+      AI 開発ツールを本格活用し、少人数・短期間で「実際に使われるシステム」を届けることを得意としています。
     </p>
     <div class="tags">
-      <span class="tag">3D Gaussian Splatting</span>
-      <span class="tag">WebGL2 / PlayCanvas</span>
-      <span class="tag">Vanilla JavaScript</span>
-      <span class="tag">Python / NumPy</span>
-      <span class="tag">Cloudflare Workers + D1</span>
-      <span class="tag">Google Cloud Storage</span>
-      <span class="tag">GitHub Pages</span>
+      <span class="tag">EC / 決済（Stripe）</span>
+      <span class="tag">店舗・売上・顧客管理</span>
+      <span class="tag">会員管理 / CRM</span>
+      <span class="tag">LINE 連携</span>
+      <span class="tag">AI・画像解析</span>
+      <span class="tag">3D / WebGL</span>
+      <span class="tag">クラウド運用</span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="./" target="_blank" rel="noopener">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        デモを開く
-      </a>
-      <a class="btn" href="https://github.com/ken1055/VR_naiken" target="_blank" rel="noopener">GitHub でソースを見る</a>
-      <a class="btn" href="https://github.com/ken1055/VR_naiken/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">設計ドキュメント</a>
+      <a class="btn primary" href="#works">実績を見る</a>
+      <a class="btn" href="#proposal">アパレル事業向けのご提案</a>
+      <a class="btn" href="https://github.com/ken1055" target="_blank" rel="noopener">GitHub</a>
     </div>
 
     <div class="stats">
-      <div class="stat"><b>-77%</b><span>PLY 圧縮による転送量削減<br>（59MB → 13.5MB）</span></div>
-      <div class="stat"><b>0</b><span>フロントエンドの外部依存<br>（エンジン同梱・ビルド不要）</span></div>
-      <div class="stat"><b>11</b><span>自作 JS モジュール<br>（約 5,500 行）</span></div>
-      <div class="stat"><b>43 秒</b><span>公開準備ワンボタン実測<br>（116 万スプラット）</span></div>
+      <div class="stat"><b>9 件</b><span>単独で設計〜公開まで担当した<br>プロダクト</span></div>
+      <div class="stat"><b>800+</b><span>コミット数（全プロジェクト合計）</span></div>
+      <div class="stat"><b>約 9.5 万行</b><span>自作コード量（フロント・サーバー・<br>DB・ツール含む）</span></div>
+      <div class="stat"><b>7 種</b><span>デプロイ経験のあるクラウド基盤<br>（Vercel / Railway / Render / Cloudflare 他）</span></div>
     </div>
   </div>
 </header>
 
 <main>
 
-<section id="overview">
+<section id="fit">
   <div class="wrap">
-    <span class="eyebrow">Overview</span>
-    <h2>解決したかったこと</h2>
+    <span class="eyebrow">Strengths</span>
+    <h2>アパレル事業の EC・業務システムに直結する経験</h2>
     <p class="lead">
-      不動産のオンライン内見は 360 度写真が主流ですが、定点からの見回しでは部屋の広さ・奥行き・動線が伝わりません。
-      3DGS なら「歩き回れる」体験を作れますが、研究用ツールのままでは一般の閲覧者や不動産会社の運用には使えませんでした。
+      「商品を売る仕組み」と「売上・顧客・店舗を管理する仕組み」の両方を、ゼロから本番運用まで構築した実績があります。
     </p>
-    <div class="compare">
+    <div class="grid">
       <div class="card">
-        <h3>Before — 3DGS を素のまま使うと</h3>
+        <h3><span class="icon"><svg viewBox="0 0 24 24"><path d="M3 6h18l-2 12H5zM8 10v4M16 10v4"/></svg></span>EC・オンライン決済</h3>
         <ul>
-          <li>メッシュが無いので壁をすり抜け、床にも立てない</li>
-          <li>撮影データが傾いていて、歩くと酔う</li>
-          <li>1 物件 59MB。スマホの初回表示が遅い</li>
-          <li>専用ビューアやアプリのインストールが前提</li>
-          <li>「どの物件を誰が何回見たか」が分からない</li>
+          <li>Stripe Checkout による購入導線（商品選択 → 入力 → 決済 → 完了 → メール）</li>
+          <li>Webhook 署名検証・決済結果の二重確認など、不正アクセス対策</li>
+          <li>3 言語・2 通貨の多言語対応、スマホ最適化、法務ページ一式</li>
         </ul>
+        <div class="ref">→ Get Japan eSIM</div>
       </div>
-      <div class="card after">
-        <h3>After — このビューアでは</h3>
+      <div class="card">
+        <h3><span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M8 14h3"/></svg></span>店舗・売上・顧客管理</h3>
         <ul>
-          <li>スプラットから自動生成したコリジョンで、目線を床に固定して歩ける</li>
-          <li>前処理で傾きを自動補正。壁と床がワールド軸に揃う</li>
-          <li>圧縮 PLY と gzip 配信で 13.5MB。見た目の劣化はほぼ無し</li>
-          <li>URL を開くだけ。PC / スマホ対応、ジョイスティック UI</li>
-          <li>物件ごとの固有 URL・QR・流入元別の閲覧集計まで一式</li>
+          <li>複数店舗の月次売上集計、顧客台帳、取引履歴</li>
+          <li>店舗別の料率設定 → 自動計算 → 請求書 PDF 一括発行</li>
+          <li>月次・年次レポート、CSV エクスポート、権限管理</li>
         </ul>
+        <div class="ref">→ FC 店舗管理システム / 代理店管理システム</div>
+      </div>
+      <div class="card">
+        <h3><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>会員・CRM・LINE</h3>
+        <ul>
+          <li>登録 → 本人確認 → 承認 → 会費 → 有効化の会員ライフサイクル</li>
+          <li>バーコード会員証、通知、一括メール、管理者チャット</li>
+          <li>LINE Messaging API の Webhook 受信・自動応答</li>
+        </ul>
+        <div class="ref">→ Truss 会員アプリ / LINE Bot</div>
+      </div>
+      <div class="card">
+        <h3><span class="icon"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg></span>集客・販促・計測</h3>
+        <ul>
+          <li>AI エージェントによる SNS 動画企画・台本の自動生成</li>
+          <li>GA4・自前ビーコンでの流入元別の閲覧計測、QR・OGP 配信</li>
+          <li>画像解析 AI によるパーソナライズ提案（肌診断 → 商品提案）</li>
+        </ul>
+        <div class="ref">→ TikTok 企画 AI / VR 内見 / AIMY</div>
       </div>
     </div>
   </div>
 </section>
 
-<section id="features">
+<section id="works">
   <div class="wrap">
-    <span class="eyebrow">Features</span>
-    <h2>主な機能</h2>
-    <p class="lead">閲覧者向けのビューア、不動産会社向けの管理ツール、プラットフォーム層の 3 つで構成しています。</p>
-    <div class="grid">
+    <span class="eyebrow">Works</span>
+    <h2>主な実績</h2>
+    <p class="lead">いずれも企画・設計・実装・デプロイ・運用ドキュメントまで単独で担当。数値はすべて Git の履歴とソースコードに基づきます。</p>
+
+    <!-- 1. eSIM EC -->
+    <article class="work">
+      <div class="media">
+        <img src="assets/portfolio/esim.jpg" alt="Get Japan eSIM のトップページ" loading="lazy">
+        <img src="assets/portfolio/esim-checkout.jpg" alt="Get Japan eSIM の購入画面（プラン確認と入力フォーム）" loading="lazy">
+      </div>
+      <div>
+        <div class="kind">EC サイト / 越境・多言語</div>
+        <h3>Get Japan eSIM — 訪日旅行者向け eSIM 販売サイト</h3>
+        <div class="meta"><span><b>期間</b> 2026.03 〜 2026.06</span><span><b>規模</b> 204 コミット・約 8,100 行</span><span><b>体制</b> 単独</span></div>
+        <p>海外からの旅行者が日本到着前にデータ通信プランを購入し、メールで届く QR コードで即日開通できる EC サイト。
+        プラン比較から決済、購入後のマイページまでを一貫して設計・実装しました。</p>
+        <ul>
+          <li><b>商品と決済:</b> 全国・多国間の 2 カテゴリ × 3 プラン。Stripe Checkout で決済し、Webhook で購入確定を受信。署名検証と完了画面での決済再確認で、URL 直打ちによるなりすましを防止</li>
+          <li><b>多言語・多通貨:</b> 英語・ドイツ語・中国語の 3 言語、USD / EUR の 2 通貨を切替。100 箇所以上の文言を辞書管理</li>
+          <li><b>購入後体験:</b> メール認証付きの「My eSIMs」ポータルで QR を再発行。利用規約・返金・プライバシー・法的表記ページを整備</li>
+          <li><b>運用コスト設計:</b> Composer や SDK に依存しない PHP で Stripe API を直接呼び出し、月額数百円のレンタルサーバーでも動作。鍵未設定時はモック決済で先行開発できる仕組み</li>
+          <li><b>品質:</b> スマホ表示の崩れを 1 件ずつ潰し込み、Playwright で画面確認。コミット履歴に改善の経緯を残す運用</li>
+        </ul>
+        <div class="stack"><span>HTML / CSS / JavaScript</span><span>PHP</span><span>Stripe Checkout / Webhook</span><span>i18n</span><span>Playwright</span><span>レンタルサーバー</span></div>
+        <div class="fit"><b>アパレル EC への応用:</b> 商品カタログ・カート・決済・購入後メール・会員ページという EC の基本導線を、決済事業者連携まで含めて一式構築した経験です。</div>
+        <div class="links"><a class="btn small" href="https://github.com/ken1055/eSIM" target="_blank" rel="noopener">ソースコード</a></div>
+      </div>
+    </article>
+
+    <!-- 2. FC management -->
+    <article class="work flip">
+      <div class="media">
+        <div class="ph">
+          <div>
+            <b>FC 店舗管理システム</b>
+            40 以上の画面・12 テーブル・8 ルート群
+            <div class="kv"><span>店舗</span><span>売上</span><span>顧客</span><span>取引履歴</span><span>ロイヤリティ</span><span>請求書 PDF</span><span>レポート</span><span>グループ</span><span>資料配布</span><span>権限</span></div>
+            <div class="mini">ログインが必要な業務システムのため、画面はお打ち合わせ時にデモでご覧いただけます。</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="kind">業務システム / 本部 × 多店舗</div>
+        <h3>FC 店舗管理システム — 売上・顧客・ロイヤリティ・請求書を一元管理</h3>
+        <div class="meta"><span><b>期間</b> 2025.07 〜 2025.10</span><span><b>規模</b> 320 コミット・約 12,000 行</span><span><b>体制</b> 単独</span></div>
+        <p>フランチャイズ本部が加盟店舗の売上と顧客を一元管理し、毎月のロイヤリティ計算と請求書発行を自動化する Web システム。
+        紙と Excel で行っていた月次業務を、店舗側の入力から本部側の請求までオンラインで完結させました。</p>
+        <ul>
+          <li><b>店舗・売上・顧客:</b> 店舗プロフィール、月次売上入力、売上履歴のフィルタ、顧客台帳と来店取引の紐付け（売上と顧客の連携設計書を作成）</li>
+          <li><b>ロイヤリティ自動計算:</b> 店舗ごとに料率と適用開始日を設定し、月次売上から自動算出。月末日の境界バグなど実運用で見つかった問題も修正</li>
+          <li><b>請求書 PDF:</b> 日本語フォントを埋め込んだ PDF を生成し、一括発行・閲覧・ダウンロード。月次・年次の売上とロイヤリティのレポート画面</li>
+          <li><b>基盤と移行:</b> SQLite で素早く立ち上げ、本番は Vercel + Supabase（PostgreSQL、行レベルセキュリティ）へ全ルートを移行。セッション永続化やレンタルサーバーの MySQL への移行手順も整備</li>
+          <li><b>引き継ぎ:</b> デプロイ・環境変数・DB エクスポート・セッション改善など 16 本の運用ドキュメントを同梱</li>
+        </ul>
+        <div class="stack"><span>Node.js / Express</span><span>EJS + Bootstrap 5</span><span>PostgreSQL / Supabase</span><span>PDFKit</span><span>Nodemailer</span><span>Vercel / Railway</span></div>
+        <div class="fit"><b>アパレル社内システムへの応用:</b> 店舗別売上の集計、顧客台帳、料率や条件に基づく自動計算、帳票 PDF、権限付き管理画面は、直営・FC・卸いずれの業態にも転用できます。</div>
+        <div class="links"><a class="btn small" href="https://github.com/ken1055/FC_management" target="_blank" rel="noopener">ソースコード</a></div>
+      </div>
+    </article>
+
+    <!-- 3. Agency management -->
+    <article class="work">
+      <div class="media">
+        <div class="ph">
+          <div>
+            <b>代理店管理システム</b>
+            20 以上の画面・7 ルート群
+            <div class="kv"><span>代理店登録</span><span>プロフィール</span><span>取扱商品</span><span>月次売上</span><span>グループ</span><span>資料配布</span><span>メール通知</span><span>公式 LINE 誘導</span><span>管理者昇格</span></div>
+            <div class="mini">営業組織向けの社内システム。FC 店舗管理システムの原型になりました。</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="kind">業務システム / 営業組織</div>
+        <h3>代理店管理システム — 営業代理店の登録・売上・資料共有</h3>
+        <div class="meta"><span><b>期間</b> 2025.07 〜 2025.09</span><span><b>規模</b> 107 コミット・約 7,600 行</span><span><b>体制</b> 単独</span></div>
+        <p>多数の営業代理店を抱える企業向けに、代理店の登録・プロフィール・取扱商品の管理、月次売上の入力と分析、商品資料の配布を行う社内システム。
+        代理店側は自分の情報と売上を入力し、本部側は一覧・グループ・分析を行う 2 つの画面系統を持ちます。</p>
+        <ul>
+          <li><b>代理店ポータル:</b> 自己登録・プロフィール作成・取扱商品の登録・売上入力・資料ダウンロード。昇格パスワードによる管理者権限への切替</li>
+          <li><b>本部管理:</b> 代理店一覧・詳細・削除、グループ編成、売上の代理店別一覧、資料アップロード、管理者アカウント管理</li>
+          <li><b>通知と導線:</b> 登録・更新時のメール通知（SMTP）、公式 LINE への誘導ボタンを設定画面から差し替え可能</li>
+          <li><b>セキュリティ:</b> パスワードハッシュ、セッション管理、レート制限、CSP ヘッダー、入力バリデーション</li>
+          <li><b>運用:</b> Railway / Vercel へのデプロイ手順、PostgreSQL への永続化、メール設定手順を文書化</li>
+        </ul>
+        <div class="stack"><span>Node.js / Express</span><span>EJS + Bootstrap 5</span><span>PostgreSQL / SQLite</span><span>Nodemailer</span><span>Railway / Vercel</span></div>
+        <div class="fit"><b>アパレル社内システムへの応用:</b> 取引先・スタッフ・店舗といった「相手ごとのポータル」と「本部の管理画面」を分けた構成は、卸先や販売員の管理にそのまま使えます。</div>
+        <div class="links"><a class="btn small" href="https://github.com/ken1055/agent_management" target="_blank" rel="noopener">ソースコード</a></div>
+      </div>
+    </article>
+
+    <!-- 4. Truss -->
+    <article class="work flip">
+      <div class="media">
+        <div class="ph">
+          <div>
+            <b>Truss 会員アプリ</b>
+            React 109 コンポーネント・12 テーブル・日英 2 言語
+            <div class="kv"><span>メール認証</span><span>承認フロー</span><span>会費</span><span>会員証バーコード</span><span>イベント</span><span>掲示板</span><span>ギャラリー</span><span>チャット</span><span>通知</span><span>一括メール</span></div>
+            <div class="mini">スマホにインストールできる PWA。管理者用ダッシュボードを同梱。</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="kind">会員管理 / コミュニティアプリ</div>
+        <h3>Truss — 国際交流サークルの会員管理・イベント運営アプリ</h3>
+        <div class="meta"><span><b>期間</b> 2025.09 〜 2026.03（2 世代）</span><span><b>規模</b> 119 コミット・約 43,000 行</span><span><b>体制</b> 単独（デザインは Figma を起点）</span></div>
+        <p>大学の国際交流サークル向けに、会員登録から承認・会費・イベント参加・掲示板までを 1 つにまとめた会員アプリ。
+        第 1 世代（Next.js）で言語・時間帯・性別比を考慮したグループマッチングを実装し、第 2 世代では Figma デザインを起点に PWA として全面刷新しました。</p>
+        <ul>
+          <li><b>会員ライフサイクル:</b> メール認証 → 初期登録 → 承認待ち → 限定アクセス → プロフィール完成 → 会費支払い → 正会員、の 9 段階を状態として管理。学生証の再提出依頼、年度更新と継続会員の扱いにも対応</li>
+          <li><b>管理ダッシュボード:</b> 入会承認、会員検索・詳細・ブロック、イベント作成と参加者管理、写真ギャラリーの承認、会員とのチャット、通知配信、一括メール</li>
+          <li><b>会員体験:</b> CODE128 のバーコード会員証、イベントへの参加・いいね、掲示板と返信、Realtime による即時反映、日本語 / 英語切替</li>
+          <li><b>認証と基盤:</b> Supabase Auth（メール + Google OAuth）、行レベルセキュリティ、ストレージ、6 本のマイグレーション。開発環境から本番 Supabase への移行ガイドを作成</li>
+        </ul>
+        <div class="stack"><span>React / TypeScript</span><span>Vite + PWA</span><span>Tailwind / Radix UI</span><span>Supabase（Auth・DB・Storage・Realtime）</span><span>Next.js（第 1 世代）</span><span>Vercel</span></div>
+        <div class="fit"><b>アパレル事業への応用:</b> 会員ランク・承認・会費・会員証・通知・一括メールは、ブランド会員制度やスタッフ向けアプリの構成要素そのものです。</div>
+        <div class="links"><a class="btn small" href="https://github.com/ken1055/Truss_app" target="_blank" rel="noopener">ソースコード（第 2 世代）</a><a class="btn small" href="https://github.com/ken1055/Truss" target="_blank" rel="noopener">第 1 世代</a></div>
+      </div>
+    </article>
+
+    <!-- 5. VR naiken -->
+    <article class="work">
+      <div class="media">
+        <img src="assets/ogp.png" alt="3D 内見ビューア" loading="lazy">
+      </div>
+      <div>
+        <div class="kind">3D / 不動産テック / プラットフォーム</div>
+        <h3>VR 内見ビューア — 本物の部屋をブラウザだけで歩ける内見体験</h3>
+        <div class="meta"><span><b>期間</b> 2026.06 〜 運用中</span><span><b>規模</b> 50 コミット・約 7,200 行</span><span><b>体制</b> 単独</span></div>
+        <p>3D Gaussian Splatting で撮影した実物件を、アプリ不要で歩き回れる Web ビューア。撮影データの前処理から配信、物件ごとの固有 URL と QR の発行、流入元別の閲覧計測まで、不動産会社がエンジニア無しで運用できる形に仕上げました。</p>
+        <ul>
+          <li><b>体験:</b> 床に目線を固定したウォークモード、自動生成コリジョン、テレポート、360 度写真との連携、スマホのジョイスティック操作</li>
+          <li><b>性能:</b> 配信データを 59MB → 13.5MB（-77%）に圧縮し、画質差を数値で検証して採用</li>
+          <li><b>運用基盤:</b> Cloudflare Workers + D1 で物件レジストリ・OGP 注入・QR 生成・閲覧イベント集計。公開準備は「フォルダを選んで実行」の 1 ボタン（116 万点のデータで 43 秒）</li>
+        </ul>
+        <div class="stack"><span>WebGL2 / PlayCanvas</span><span>Vanilla JavaScript</span><span>Python / NumPy</span><span>Cloudflare Workers + D1</span><span>Google Cloud Storage</span><span>GA4</span></div>
+        <div class="fit"><b>アパレル事業への応用:</b> 店舗やショールームの 3D 公開、QR からの来店計測など、オンラインとリアル店舗をつなぐ施策に転用できます。</div>
+        <div class="links"><a class="btn small primary" href="./" target="_blank" rel="noopener">デモを開く</a><a class="btn small" href="portfolio-vr-naiken.html">詳細ページ</a><a class="btn small" href="https://github.com/ken1055/VR_naiken" target="_blank" rel="noopener">ソースコード</a></div>
+      </div>
+    </article>
+
+    <!-- 6. AIMY -->
+    <article class="work flip">
+      <div class="media">
+        <img src="assets/portfolio/aimy.jpg" alt="AIMY 肌診断のトップページ" loading="lazy">
+      </div>
+      <div>
+        <div class="kind">AI / 画像解析 / 美容</div>
+        <h3>AIMY — AI 肌診断とパーソナライズ提案</h3>
+        <div class="meta"><span><b>期間</b> 2026.06</span><span><b>規模</b> 約 13,800 行（解析 7 種）</span><span><b>体制</b> 単独</span></div>
+        <p>スマホで撮った顔写真から、シミ・シワ・毛穴・キメ・赤みを解析して可視化し、将来の肌変化シミュレーションと化粧品・施術の提案レポートを生成する Web アプリ。
+        美容医療の高額な診断機器に近い見せ方をブラウザだけで実現することを狙いました。</p>
+        <ul>
+          <li><b>画像解析:</b> MediaPipe の顔ランドマークで肌領域を抽出し、OpenCV と scikit-image でシミ（Hessian ブロブ検出・3 段階分類）、毛穴（モルフォロジー）、シワ、キメ、赤み、エイジングの 7 つの解析 API を実装</li>
+          <li><b>見せ方:</b> 業務用診断機器に近いトーンマッピング表現を独自に再現。検出マーカーを描くのではなく自然に強調する方式</li>
+          <li><b>生成 AI:</b> Gemini API で悩み別のレポート文と化粧品レコメンドを生成。投資家向けピッチページも同梱</li>
+          <li><b>基盤:</b> Flask + gunicorn でクラウドにデプロイ可能、ローカル開発サーバーも同梱</li>
+        </ul>
+        <div class="stack"><span>Python / Flask</span><span>OpenCV</span><span>MediaPipe</span><span>scikit-image</span><span>Gemini API</span><span>Render / Railway</span></div>
+        <div class="fit"><b>アパレル事業への応用:</b> 写真からの診断 → 商品提案という流れは、パーソナルカラー診断や体型に合わせたコーディネート提案に置き換えられます。</div>
+        <div class="links"><a class="btn small" href="https://github.com/ken1055/AIMY" target="_blank" rel="noopener">ソースコード</a></div>
+      </div>
+    </article>
+
+    <!-- 7. TikTok agent -->
+    <article class="work">
+      <div class="media">
+        <div class="ph">
+          <div>
+            <b>TikTok 企画 AI エージェント</b>
+            5 つの AI が分業して企画書と台本を生成
+            <div class="kv"><span>調査</span><span>→ 戦略</span><span>→ 企画 8〜10 本</span><span>→ 採点レビュー</span><span>→ 台本</span></div>
+            <div class="mini">クライアント情報を入力すると、トレンド調査からシーン別台本までを数分で出力。ログイン付き Web 画面と CLI の 2 形態。</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="kind">生成 AI / SNS マーケティング</div>
+        <h3>TikTok 企画 AI エージェント — SNS 運用代行のための企画・台本自動生成</h3>
+        <div class="meta"><span><b>期間</b> 2026.05</span><span><b>規模</b> 約 2,800 行</span><span><b>体制</b> 単独</span></div>
+        <p>SNS 運用代行の現場で時間がかかる「企画出し」を自動化するツール。会社名・業界・ターゲット・目的・ブランドトーンを入力すると、
+        役割の異なる 5 つの AI エージェントが順に働き、企画書と撮影用台本を出力します。</p>
+        <ul>
+          <li><b>エージェント構成:</b> 調査（人気フォーマット・トレンド・フック・競合）→ 戦略（コンテンツの柱・ペルソナ）→ 企画（8〜10 本、冒頭フックと構成）→ レビュー（バズ可能性を 10 点満点で採点し改善提案、基準未満は再生成）→ 台本（タイムコード・ナレーション・映像指示・テロップ）</li>
+          <li><b>実装:</b> Claude API の Tool Use で各エージェントの出力を構造化し、型安全に受け渡し。進捗をリアルタイム表示</li>
+          <li><b>提供形態:</b> ログイン付きの Next.js Web 画面と、ターミナルから使える CLI</li>
+        </ul>
+        <div class="stack"><span>TypeScript</span><span>Claude API（Tool Use）</span><span>Next.js</span><span>Render</span></div>
+        <div class="fit"><b>アパレル事業への応用:</b> 新作・セール・スタッフコーデなど、ブランドトーンに沿った SNS 企画と台本を継続的に量産できます。</div>
+        <div class="links"><a class="btn small" href="https://github.com/ken1055/TikTok_agent" target="_blank" rel="noopener">ソースコード</a></div>
+      </div>
+    </article>
+
+    <h3 style="margin:28px 0 12px;font-size:1.1rem;">その他の制作物</h3>
+    <div class="minis">
       <div class="card">
-        <h3><span class="icon"><svg viewBox="0 0 24 24"><path d="M13 4v16M9 20h8M5 8l4-4 4 4"/></svg></span>ウォークモード</h3>
-        <p>目線の高さを床に自動追従させ、WASD / ジョイスティックで実際に部屋を歩く感覚で移動。壁・家具にはコリジョンで止まります。</p>
+        <h3>LINE Messaging API Bot</h3>
+        <p>Webhook の署名検証、テキスト・画像・スタンプ・フォロー・グループ参加などのイベント処理、キーワード自動返信、メッセージ送信 API を Next.js で実装。公式 LINE を使った顧客対応の土台。</p>
+        <div class="ref">2025.06 / Next.js・LINE Bot SDK</div>
       </div>
       <div class="card">
-        <h3><span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></span>自動コリジョン生成</h3>
-        <p>メッシュを持たない 3DGS から、ボクセルと床・天井高さマップを自前で生成。ガラスや鏡など検出できない面は管理ツールで手動箱を追加できます。</p>
+        <h3>本スキャナー（在庫照合デスクトップアプリ）</h3>
+        <p>書棚の写真を Google Cloud Vision で文字認識し、Excel / CSV の台帳と照合して一覧表示するデスクトップアプリ。画像から台帳を引き当てる、棚卸し型の業務ツール。</p>
+        <div class="ref">2025.06 / Python・PyQt・Cloud Vision・pandas</div>
       </div>
       <div class="card">
-        <h3><span class="icon"><svg viewBox="0 0 24 24"><path d="M12 22s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg></span>テレポート＆場所一覧</h3>
-        <p>部屋ごとのテレポートポイントに近づくと「ここへ移動」を表示。右上のメニューから任意の部屋へ直接ジャンプもできます。</p>
-      </div>
-      <div class="card">
-        <h3><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>360 度パノラマ連携</h3>
-        <p>3DGS で撮れない部屋（風呂・トイレなど）は 360 度写真で補完。自前 WebGL の Panini 投影で室内を自然に見せ、元の部屋に戻れます。</p>
-      </div>
-      <div class="card">
-        <h3><span class="icon"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9h16M9 4v16"/></svg></span>物件固有 URL と QR</h3>
-        <p>Cloudflare Worker が <code>/p/{id}</code> で OGP 付きページを配信。QR コードも生成し、SNS / ポータル / チラシなど流入元別に閲覧数を集計します。</p>
-      </div>
-      <div class="card">
-        <h3><span class="icon"><svg viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg></span>公開準備ワンボタン</h3>
-        <p>撮影フォルダを選ぶだけで、水平化 → コリジョン生成 → 圧縮 → GCS アップロードを順に実行。ログをリアルタイム表示し、終わったら即ビューアで確認できます。</p>
+        <h3>物件一覧スプレッドシート連携・QR 発行</h3>
+        <p>VR 内見ビューアの運用で、Google スプレッドシートから物件 URL を自動生成する Apps Script、店頭ポップ用 QR の SVG 生成、SNS・ポータル・QR・メール別の閲覧集計を実装。</p>
+        <div class="ref">2026.10 / Apps Script・Cloudflare Workers</div>
       </div>
     </div>
   </div>
@@ -387,180 +539,89 @@
 <section id="stack">
   <div class="wrap">
     <span class="eyebrow">Tech Stack</span>
-    <h2>技術スタックと選定理由</h2>
-    <p class="lead">「本番が突然壊れない」「ビルド無しで誰でも配信できる」を優先し、依存を最小にしています。</p>
+    <h2>技術スタック</h2>
+    <p class="lead">案件の規模・予算・運用体制に合わせて選定します。既製の SaaS を使うべき場面では、無理に自作しません。</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>領域</th><th>採用技術</th><th>選定理由</th></tr></thead>
+        <thead><tr><th>領域</th><th>技術</th><th>使用した案件</th></tr></thead>
         <tbody>
-          <tr><td>レンダリング</td><td>PlayCanvas 2.7.4（<code>GSplatComponent</code>）</td><td>3DGS をネイティブ対応。CDN 参照ではなく <code>vendor/</code> に同梱・バージョン固定し、破壊的更新と CDN 障害を遮断</td></tr>
-          <tr><td>フロントエンド</td><td>Vanilla JavaScript（ES Module 無し）</td><td>ビルド工程を持たず <code>&lt;script&gt;</code> 直読みで動かす。GitHub Pages にそのまま置ける</td></tr>
-          <tr><td>コリジョン</td><td>自前ボクセル / 高さマップ（SVO 対応）</td><td>3DGS はメッシュを持たず物理エンジンが使えないため、スプラット密度から自作</td></tr>
-          <tr><td>360 度表示</td><td>自前 WebGL（フラグメントシェーダ）</td><td>Panini 投影を固定しオンデマンド描画で省電力。ライブラリ非依存</td></tr>
-          <tr><td>前処理</td><td>Python + NumPy / Node.js CLI</td><td>PLY の傾き補正・圧縮・コリジョン生成をコマンド化し、管理ツールからも呼べるように</td></tr>
-          <tr><td>配信</td><td>Google Cloud Storage + GitHub Pages</td><td>静的配信のみで運用コストを最小化。Cache-Control と gzip 転送を使い分け</td></tr>
-          <tr><td>プラットフォーム</td><td>Cloudflare Workers + D1（SQLite）</td><td>エッジで OGP 注入・期限判定・閲覧イベント記録。ビューア本体は静的のまま</td></tr>
-          <tr><td>計測</td><td>GA4 + 自前 beacon</td><td>読込時間・テレポート利用・パノラマ遷移などをイベント化し、流入元別に集計</td></tr>
+          <tr><td>フロントエンド</td><td>React / Next.js / TypeScript / Tailwind CSS / Vite（PWA）/ EJS / HTML・CSS・JavaScript</td><td>Truss、TikTok 企画 AI、LINE Bot、FC・代理店管理、eSIM、VR 内見</td></tr>
+          <tr><td>バックエンド</td><td>Node.js（Express）/ PHP / Python（Flask）/ Cloudflare Workers / Next.js API Routes</td><td>FC・代理店管理、eSIM、AIMY、VR 内見、TikTok 企画 AI</td></tr>
+          <tr><td>データベース</td><td>PostgreSQL（Supabase、Railway）/ SQLite / Cloudflare D1 / MySQL 移行 / 行レベルセキュリティ設計</td><td>FC・代理店管理、Truss、VR 内見</td></tr>
+          <tr><td>決済・外部連携</td><td>Stripe Checkout・Webhook / LINE Messaging API / SMTP メール / Google OAuth / Google スプレッドシート（Apps Script）</td><td>eSIM、LINE Bot、FC・代理店管理、Truss、VR 内見</td></tr>
+          <tr><td>AI・画像</td><td>Claude API（Tool Use）/ Gemini API / Google Cloud Vision / OpenCV / MediaPipe / scikit-image / WebGL・3D Gaussian Splatting</td><td>TikTok 企画 AI、AIMY、本スキャナー、VR 内見</td></tr>
+          <tr><td>インフラ・運用</td><td>Vercel / Railway / Render / Cloudflare / Google Cloud Storage / GitHub Pages / レンタルサーバー（Xserver 等）/ GA4</td><td>全案件</td></tr>
+          <tr><td>帳票・ドキュメント</td><td>PDF 生成（日本語フォント埋め込み）/ CSV エクスポート / 運用手順書・設計書の整備</td><td>FC 管理（16 本の運用ドキュメント）、VR 内見</td></tr>
+          <tr><td>開発体制</td><td>Git による履歴管理 / Playwright による画面確認 / AI 開発ツール（Claude Code 等）を活用した高速開発</td><td>全案件</td></tr>
         </tbody>
       </table>
     </div>
   </div>
 </section>
 
-<section id="arch">
+<section id="process">
   <div class="wrap">
-    <span class="eyebrow">Architecture</span>
-    <h2>システム構成</h2>
-    <p class="lead">撮影データは前処理パイプラインを通して GCS に置き、ビューアはそれを読むだけ。物件の管理と計測は Worker 層に分離しています。</p>
-    <div class="arch">
-      <svg viewBox="0 0 960 300" role="img" aria-label="システム構成図">
-        <defs>
-          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="currentColor" style="fill: var(--muted)"/>
-          </marker>
-        </defs>
-
-        <!-- row 1: pipeline -->
-        <text class="lbl" x="20" y="28">1. 撮影 → 前処理（ローカル）</text>
-        <rect class="box" x="20" y="40" width="150" height="64" rx="10"/>
-        <text x="35" y="66">PortalCam 撮影</text>
-        <text class="s" x="35" y="86">3DGS PLY（約 60MB）</text>
-
-        <rect class="box hl" x="210" y="40" width="330" height="64" rx="10"/>
-        <text x="225" y="62">公開準備パイプライン（admin.html + tools/serve.js）</text>
-        <text class="s" x="225" y="84">水平化 → コリジョン生成 → 圧縮 → アップロード</text>
-        <text class="s" x="225" y="98">level_gaussian_ply.py / build_collider.js / optimize_scene.py</text>
-
-        <rect class="box" x="580" y="40" width="160" height="64" rx="10"/>
-        <text x="595" y="66">Google Cloud Storage</text>
-        <text class="s" x="595" y="86">圧縮 PLY + JSON（gzip）</text>
-
-        <path class="arrow" d="M170 72 H208"/>
-        <path class="arrow" d="M540 72 H578"/>
-
-        <!-- row 2: delivery -->
-        <text class="lbl" x="20" y="150">2. 配信・閲覧</text>
-        <rect class="box" x="20" y="162" width="200" height="64" rx="10"/>
-        <text x="35" y="188">Cloudflare Worker + D1</text>
-        <text class="s" x="35" y="208">/p/{id}・OGP 注入・QR・計測</text>
-
-        <rect class="box hl" x="270" y="162" width="270" height="64" rx="10"/>
-        <text x="285" y="188">ビューア（GitHub Pages・静的）</text>
-        <text class="s" x="285" y="208">PlayCanvas + 自作 11 モジュール</text>
-
-        <rect class="box" x="580" y="162" width="160" height="64" rx="10"/>
-        <text x="595" y="188">閲覧者</text>
-        <text class="s" x="595" y="208">PC / スマホ・アプリ不要</text>
-
-        <path class="arrow" d="M220 194 H268"/>
-        <path class="arrow" d="M660 162 V106"/>
-        <text class="s" x="668" y="140">PLY 取得</text>
-        <path class="arrow" d="M578 194 H542"/>
-        <path class="arrow" d="M392 125 H120 V160"/>
-        <path class="arrow" d="M238 264 H120 V228"/>
-
-        <!-- row 3: inputs -->
-        <text class="lbl" x="20" y="270">3. 配布と計測</text>
-        <rect class="box" x="240" y="244" width="420" height="40" rx="10"/>
-        <text x="255" y="270">SNS / ポータル / QR / メール の URL（?s= で流入元を記録）</text>
-        <rect class="box" x="240" y="110" width="300" height="30" rx="10"/>
-        <text class="s" x="255" y="130">閲覧イベント beacon（view / scene_loaded / teleport_used …）</text>
-
-        <!-- side: modules -->
-        <rect class="box" x="780" y="40" width="160" height="244" rx="10"/>
-        <text x="795" y="64">自作モジュール</text>
-        <text class="s" x="795" y="88">main.js（読込・振り分け）</text>
-        <text class="s" x="795" y="108">collider.js（コリジョン）</text>
-        <text class="s" x="795" y="128">camera-controller.js</text>
-        <text class="s" x="795" y="148">gsplat-loader / renderer</text>
-        <text class="s" x="795" y="168">lcc-parser + worker</text>
-        <text class="s" x="795" y="188">pano-renderer.js</text>
-        <text class="s" x="795" y="208">teleport.js</text>
-        <text class="s" x="795" y="228">ui.js</text>
-        <text class="s" x="795" y="248">vr-mode.js（WebXR）</text>
-        <text class="s" x="795" y="270">合計 約 5,500 行</text>
-      </svg>
+    <span class="eyebrow">How I Work</span>
+    <h2>進め方と、大切にしていること</h2>
+    <p class="lead">「動くものを早く見せて、使いながら直す」を基本に、引き継げる形で納めます。</p>
+    <div class="steps">
+      <div class="step"><h3>業務のヒアリング</h3><p>今の業務フロー（Excel・紙・口頭）を確認し、どこを自動化すると効果が大きいかを一緒に決めます。</p></div>
+      <div class="step"><h3>画面と設計の合意</h3><p>画面イメージとデータ構造を先に共有。FC 管理では「売上と顧客の連携」を設計書にしてから実装しました。</p></div>
+      <div class="step"><h3>短いサイクルで実装</h3><p>AI 開発ツールを活用し、数日単位で動く画面をお見せします。eSIM の購入導線は 2 日で決済まで通しました。</p></div>
+      <div class="step"><h3>本番公開と計測</h3><p>クラウドへのデプロイ、決済・メールの本番切替、アクセス計測まで対応。障害時は原因と再発防止策を文書化します。</p></div>
+      <div class="step"><h3>引き継ぎ・運用</h3><p>デプロイ手順・環境変数・DB のバックアップ方法などを手順書として納品。社内でも外部でも引き継げる状態にします。</p></div>
     </div>
-
-    <div class="modules" style="margin-top:16px">
-      <div class="mod"><code>main.js</code><span>URL / ファイル / フォルダ読込の振り分け、コンパニオン適用、許可リスト、計測</span></div>
-      <div class="mod"><code>collider.js</code><span>SVO / 高さマップ / 手動箱による移動制限・床追従・スイープ判定（1,660 行）</span></div>
-      <div class="mod"><code>camera-controller.js</code><span>入力→カメラ姿勢。ウォーク / 自由飛行、テレポート、読込直後の床スナップ</span></div>
-      <div class="mod"><code>pano-renderer.js</code><span>360 度画像を Panini 投影で描画する自前 WebGL ビューア</span></div>
-      <div class="mod"><code>lcc-parser.js</code><span>XGRIDS LCC 形式を Web Worker で .splat に変換</span></div>
-      <div class="mod"><code>worker/src/index.js</code><span>物件レジストリ・OGP 注入・QR 生成・閲覧集計 API（Cloudflare Workers）</span></div>
+    <div class="grid" style="margin-top:20px">
+      <div class="card">
+        <h3>少人数でも止まらない体制</h3>
+        <p>9 件すべてを一人で設計から運用まで回してきました。AI 開発ツールを本格活用することで、従来なら数名のチームが必要な規模を、短期間・低コストで形にできます。</p>
+      </div>
+      <div class="card">
+        <h3>数字で判断する</h3>
+        <p>配信データの圧縮では画質差を数値で比較し、コリジョンの不具合では到達面積を測って回帰テスト化。感覚ではなく計測で決めます。</p>
+      </div>
+      <div class="card">
+        <h3>業務とお金の流れを理解する</h3>
+        <p>ロイヤリティ計算、代理店の売上、会費と年度更新、越境 EC の決済と返金。システムの裏にある業務とお金の流れを理解したうえで設計します。</p>
+      </div>
     </div>
   </div>
 </section>
 
-<section id="challenges">
+<section id="proposal">
   <div class="wrap">
-    <span class="eyebrow">Engineering</span>
-    <h2>技術的な工夫と乗り越えた課題</h2>
-    <p class="lead">実物件のデータで運用して初めて見つかった問題を、計測しながら一つずつ潰しました。</p>
-
-    <div class="challenge">
-      <div class="num">01</div>
-      <div>
-        <h3>メッシュの無い 3DGS に「歩ける床と壁」を作る</h3>
-        <p>3DGS は点群に近いデータで物理エンジンが使えません。スプラットの位置と半径からボクセルグリッドを生成し、XZ 平面の壁マスクと床・天井の高さマップに落とし込む自前コリジョンを実装しました。
-        薄い壁が潰れないよう約 2.5cm/ボクセルを狙い、メモリ上限に合わせて解像度を 128〜192 で可変にしています。</p>
-        <p>ノイズ対策として、全点の min/max ではなく上下 0.3% を切り捨てたパーセンタイル bbox を使い、連結成分フィルタで孤立した浮遊ノイズを除去。
-        ガラスや鏡のように撮影に写らない面は、管理ツールから手動コリジョン箱を置けるようにしました。</p>
-        <span class="result">結果: <b>壁抜け無し</b>で部屋を歩ける。狭い廊下の通過可否は <code>collider_reach.js</code> で到達面積を数値化して回帰テスト</span>
+    <span class="eyebrow">Proposal</span>
+    <h2>アパレル事業向けに、ご提案できること</h2>
+    <p class="lead">これまでの実績の部品を組み合わせると、次のような構成を短期間で立ち上げられます。詳細は業務内容を伺ったうえでご提案します。</p>
+    <div class="grid">
+      <div class="card">
+        <h3><span class="icon"><svg viewBox="0 0 24 24"><path d="M3 6h18l-2 12H5zM8 10v4M16 10v4"/></svg></span>EC サイト</h3>
+        <ul>
+          <li>商品カタログ（カラー・サイズ別の在庫）、カート、Stripe 等による決済</li>
+          <li>会員登録・マイページ・購入履歴・お気に入り</li>
+          <li>LINE 連携での再入荷・セール通知、クーポン</li>
+          <li>多言語・多通貨対応による越境販売（実績あり）</li>
+          <li>Shopify 等の既製サービスとの使い分けもご提案可能</li>
+        </ul>
       </div>
-    </div>
-
-    <div class="challenge">
-      <div class="num">02</div>
-      <div>
-        <h3>窓の外のスプラットで廊下が「壁」になる問題</h3>
-        <p>運用中に特定の物件だけ廊下を通れない症状が出ました。原因は、窓越しに写り込んだ屋外の建物や空のスプラットが 0.3% を超え、bbox が数十 m に膨らんで 1 ボクセルが 20cm 超になっていたこと。</p>
-        <p>対策として 0.25m の密度格子で「面として密なセル」の最大連結成分（床・壁・天井の殻）を本体とみなし、そこから 0.75m 以内の成分だけを範囲に含めるように変更。壁の膨らみ量も物理長 7.5cm で頭打ちにしました。</p>
-        <span class="result">結果: 影響のあった <b>3 物件すべて</b>で再生成のみで解消。既存データは「コリジョンを作り直す」ボタン一つで更新</span>
+      <div class="card">
+        <h3><span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M8 14h3"/></svg></span>社内業務システム</h3>
+        <ul>
+          <li>店舗別・チャネル別の売上集計と日次・月次レポート</li>
+          <li>商品・在庫・発注・入荷の管理、バーコード対応</li>
+          <li>顧客台帳と購買履歴、スタッフ別実績</li>
+          <li>取引先・卸先ごとのポータルと請求書 PDF の自動発行（実績あり）</li>
+          <li>権限管理、CSV 出力、既存 Excel からの移行</li>
+        </ul>
       </div>
-    </div>
-
-    <div class="challenge">
-      <div class="num">03</div>
-      <div>
-        <h3>撮影データの傾きを自動補正する</h3>
-        <p>撮影機が出力する PLY は床が水平とは限らず、傾いたまま歩くと酔います。各スプラットの最短スケール軸を面法線とみなし、壁 2 方向と床・天井の法線クラスタを反復推定して初期回転を求めました。
-        さらに軸方向 1cm ヒストグラムの集中度を最大化する座標降下で微調整しています。</p>
-        <p>位置だけでなく回転クォータニオンも同時に回すことで表示を壊さず、処理済みファイルにはヘッダーに印を付けてパイプラインの二重実行を防ぎました。</p>
-        <span class="result">結果: 水平化を<b>人手ゼロ</b>で公開準備に組み込み</span>
-      </div>
-    </div>
-
-    <div class="challenge">
-      <div class="num">04</div>
-      <div>
-        <h3>初回表示を速くする：転送量 -77%</h3>
-        <p>生の PLY は 1 スプラット 68 バイト、87 万スプラットで 59MB ありました。splat-transform の圧縮 PLY 形式（16 バイト/スプラット）に変換して 13.5MB に。
-        同一視点で描画を比較し、64 ブロック平均の絶対差 0.4/255・最大 2/255 と画質劣化がほぼ無いことを確認してから採用しました。</p>
-        <p>コンパニオン JSON は gzip 転送で 2.25MB → 0.19MB。本体は immutable 長期キャッシュ、JSON は短期キャッシュと Cache-Control を使い分けています。
-        SOGS 形式も検証しましたが、この素材では 3.6MB しか差が無く改修コストに見合わないと判断して見送りました。</p>
-        <span class="result">結果: <b>59MB → 13.5MB</b>。拡張子は .ply のままでビューア側は無改修</span>
-      </div>
-    </div>
-
-    <div class="challenge">
-      <div class="num">05</div>
-      <div>
-        <h3>「特定の人だけ画面が真っ黒」の障害対応</h3>
-        <p>JS を更新した後、以前に訪問したことのある人だけ読み込みが止まる障害が起きました。新しい HTML と古いキャッシュ JS が混在し、モジュール間の API 不一致で落ちていたのが原因です。</p>
-        <p>全スクリプトに <code>?v=日付</code> のキャッシュバスタを付け、更新手順を README に明文化。合わせて <code>?url=</code> で読み込める先を GCS バケットと同一オリジンに制限する許可リストも入れ、任意 URL 読込によるリスクを塞ぎました。</p>
-        <span class="result">結果: 再発ゼロ。<b>運用手順をドキュメント化</b>して属人化を防止</span>
-      </div>
-    </div>
-
-    <div class="challenge">
-      <div class="num">06</div>
-      <div>
-        <h3>不動産会社が運用できる形にする</h3>
-        <p>技術デモで終わらせないため、物件登録から配布・計測までを一本化しました。Cloudflare Worker が物件 ID ごとに OGP 付きページと QR を配信し、掲載期限や成約時のアーカイブも管理 API で操作できます。</p>
-        <p>流入元は URL パラメータで記録し、SNS・ポータル・店頭 QR・メールのどこから何回見られたかを日別に集計。管理ツール側は「フォルダを選んで実行」だけで公開でき、116 万スプラットの物件で 43 秒で完了します。</p>
-        <span class="result">結果: 撮影から公開まで<b>エンジニア不要</b>のワークフロー</span>
+      <div class="card">
+        <h3><span class="icon"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg></span>集客・販促・AI 活用</h3>
+        <ul>
+          <li>SNS 投稿企画・台本の AI 生成（実績あり）</li>
+          <li>写真からのパーソナライズ提案（コーデ・カラー診断）</li>
+          <li>QR・OGP・GA4 による店舗とオンラインの流入計測（実績あり）</li>
+          <li>店舗・ショールームの 3D 公開（実績あり）</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -569,50 +630,15 @@
 <section id="timeline">
   <div class="wrap">
     <span class="eyebrow">Timeline</span>
-    <h2>開発の経緯</h2>
-    <p class="lead">個人開発として企画から運用まで担当。約 4 か月・50 コミットで、技術検証から不動産会社が使えるプラットフォームまで育てました。</p>
+    <h2>開発の歩み</h2>
     <div class="timeline">
-      <div class="tl">
-        <time>2026.06</time>
-        <h3>技術検証</h3>
-        <p>PlayCanvas の 3DGS ネイティブ対応を検証し、PLY / .splat / LCC の読込と基本的なカメラ操作を実装。</p>
-      </div>
-      <div class="tl">
-        <time>2026.07</time>
-        <h3>集中開発：歩ける内見へ</h3>
-        <p>自前コリジョンとウォークモード、テレポート、360 度パノラマ連携、スマホ UI を実装。傾き補正と PLY 圧縮の前処理ツールを整備。</p>
-      </div>
-      <div class="tl">
-        <time>2026.08</time>
-        <h3>運用開始と安定化</h3>
-        <p>実物件での公開を開始。キャッシュ混在障害の対応、許可リスト、OGP / GA4 計測を追加。</p>
-      </div>
-      <div class="tl">
-        <time>2026.10</time>
-        <h3>プラットフォーム化</h3>
-        <p>Cloudflare Workers + D1 で物件レジストリと閲覧集計を構築。公開準備をワンボタン化し、窓外スプラットによるコリジョン不良を修正。</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="role">
-  <div class="wrap">
-    <span class="eyebrow">Role</span>
-    <h2>担当範囲</h2>
-    <div class="grid">
-      <div class="card">
-        <h3>企画・要件定義</h3>
-        <p>360 度写真の限界と不動産会社の運用フローを踏まえ、「歩ける内見」と「エンジニア不要の公開手順」を要件に設定。</p>
-      </div>
-      <div class="card">
-        <h3>設計・実装</h3>
-        <p>フロントエンド 11 モジュール、前処理 CLI、ローカル開発サーバー、Worker API、D1 スキーマまで全レイヤーを実装。</p>
-      </div>
-      <div class="card">
-        <h3>検証・運用</h3>
-        <p>画質差・転送量・到達面積を数値で比較して判断。障害の原因究明と再発防止策、README / 設計ドキュメントの整備。</p>
-      </div>
+      <div class="tl"><time>2025.06</time><h3>LINE Bot / 本スキャナー</h3><p>LINE Messaging API と Google Cloud Vision を使った小規模ツールを制作。外部 API 連携と業務ツール開発の起点。</p></div>
+      <div class="tl"><time>2025.07 〜 09</time><h3>代理店管理システム</h3><p>営業組織向けの社内システムを 3 か月・107 コミットで構築し、Railway / Vercel で運用。</p></div>
+      <div class="tl"><time>2025.07 〜 10</time><h3>FC 店舗管理システム</h3><p>代理店管理を発展させ、顧客管理・ロイヤリティ自動計算・請求書 PDF を追加。320 コミット、Supabase へ全面移行。</p></div>
+      <div class="tl"><time>2025.09 〜 2026.03</time><h3>Truss 会員アプリ（2 世代）</h3><p>Next.js 版でマッチング機能を実装後、Figma デザインを起点に React PWA として全面刷新。管理ダッシュボードと本番移行まで。</p></div>
+      <div class="tl"><time>2026.03 〜 06</time><h3>Get Japan eSIM（EC）</h3><p>越境 EC サイトを 204 コミットで構築。多言語・多通貨、Stripe 決済、購入後ポータルまで。</p></div>
+      <div class="tl"><time>2026.05 〜 06</time><h3>TikTok 企画 AI / AIMY 肌診断</h3><p>Claude API のマルチエージェントと、OpenCV・MediaPipe・Gemini による画像解析プロダクトを相次いで制作。</p></div>
+      <div class="tl"><time>2026.06 〜 現在</time><h3>VR 内見ビューア</h3><p>3D Gaussian Splatting の内見プラットフォームを運用中。Cloudflare Workers による物件レジストリと計測基盤を追加。</p></div>
     </div>
   </div>
 </section>
@@ -622,12 +648,13 @@
 <footer>
   <div class="wrap">
     <div class="links">
-      <a href="./" target="_blank" rel="noopener">デモを開く</a>
-      <a href="https://github.com/ken1055/VR_naiken" target="_blank" rel="noopener">GitHub: ken1055/VR_naiken</a>
-      <a href="https://github.com/ken1055/VR_naiken/blob/main/README.md" target="_blank" rel="noopener">README</a>
-      <a href="https://github.com/ken1055/VR_naiken/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">ARCHITECTURE</a>
+      <a href="https://github.com/ken1055" target="_blank" rel="noopener">GitHub: ken1055</a>
+      <a href="portfolio-vr-naiken.html">VR 内見ビューア 詳細</a>
+      <a href="./" target="_blank" rel="noopener">VR 内見ビューア デモ</a>
     </div>
-    <p>VR 内見ビューア — 3D Gaussian Splatting による Web 内見体験。個人開発プロジェクト。</p>
+    <!-- TODO: お名前・メールアドレス・LINE などの連絡先をここに追記してください -->
+    <p>お問い合わせは GitHub プロフィール記載の連絡先までお願いします。</p>
+    <p class="note">掲載内容はすべて公開リポジトリの Git 履歴とソースコードに基づいています。業務システムはログインが必要なため、画面は打ち合わせ時にデモでご覧いただけます。</p>
   </div>
 </footer>
 
