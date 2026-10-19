@@ -276,7 +276,9 @@ window.Collider = (function () {
     // ---- Phase 2c 用: 粗い点密度格子から「本体」の bbox を求める ----
     // counts: Uint32Array(nx*ny*nz) 各セルの点数、cell: セル一辺 (m)、(ox,oy,oz): 格子原点、
     // fallback: 絞り込み前の bbox（本体が見つからない・小さすぎる場合はこれを返す）
-    function denseClusterBounds(counts, nx, ny, nz, cell, ox, oy, oz, fallback) {
+    // seeds: 本体を選ぶ基準点 [{x,y,z,label}]（ワールド座標、優先順）。最初に「十分大きい塊」に
+    //        当たった基準点の塊を本体にする。どれも当たらなければ最大の塊。
+    function denseClusterBounds(counts, nx, ny, nz, cell, ox, oy, oz, fallback, seeds) {
         var N = counts.length, total = 0, nonEmpty = 0;
         for (var i = 0; i < N; i++) { if (counts[i]) { total += counts[i]; nonEmpty++; } }
         if (!nonEmpty) return fallback;
@@ -319,10 +321,34 @@ window.Collider = (function () {
         }
         if (next === 1) return fallback;
 
-        // 最大成分（床・壁・天井の殻）を本体とし、その近く（0.75m 以内）にある密な成分は
+        // 本体（床・壁・天井の殻）を 1 つ選び、その近く（0.75m 以内）にある密な成分は
         // バルコニー・窓際の什器などとみなして取り込む。離れた屋外の建物・空は捨てる。
-        var best = 1;
-        for (var L = 2; L < next; L++) if (sizes[L] > sizes[best]) best = L;
+        // 本体は「基準点（初期カメラ → 撮影開始位置＝原点）のそばの塊」を優先する。
+        // 最大の塊を無条件に選ぶと、PortalCam の撮影データに 70m 離れた別の塊
+        // （コーポラス京橋: 部屋 z −3.5〜8m に対し z −77〜−65m の大きな塊）があるとき、
+        // 歩く部屋ではない方を本体にしてしまい、部屋のコリジョンが丸ごと無くなる。
+        var largest = 1;
+        for (var L = 2; L < next; L++) if (sizes[L] > sizes[largest]) largest = L;
+        var best = largest, how = '最大の塊';
+        var minSize = Math.max(64, Math.round(sizes[largest] * 0.01));   // 照明・家具の小片は本体にしない
+        var R = Math.ceil(2.0 / cell);   // 基準点から 2m 以内の密なセルを探す（カメラは宙に浮いている）
+        for (var si = 0; seeds && si < seeds.length; si++) {
+            var sd = seeds[si];
+            if (!sd || !isFinite(sd.x) || !isFinite(sd.y) || !isFinite(sd.z)) continue;
+            var sx0 = Math.floor((sd.x - ox) / cell), sy0 = Math.floor((sd.y - oy) / cell), sz0 = Math.floor((sd.z - oz) / cell);
+            var hit = 0, hitD = Infinity;
+            for (var qz = Math.max(0, sz0 - R); qz <= Math.min(nz - 1, sz0 + R); qz++) {
+                for (var qy = Math.max(0, sy0 - R); qy <= Math.min(ny - 1, sy0 + R); qy++) {
+                    for (var qx = Math.max(0, sx0 - R); qx <= Math.min(nx - 1, sx0 + R); qx++) {
+                        var lb = labels[qx + qy * nx + qz * nxy];
+                        if (!lb) continue;
+                        var dd = (qx - sx0) * (qx - sx0) + (qy - sy0) * (qy - sy0) + (qz - sz0) * (qz - sz0);
+                        if (dd < hitD) { hitD = dd; hit = lb; }
+                    }
+                }
+            }
+            if (hit && sizes[hit] >= minSize) { best = hit; how = sd.label || '基準点'; break; }
+        }
         var cur = bb[best].slice(), used = new Uint8Array(next); used[best] = 1;
         var gap = Math.ceil(0.75 / cell), changed = true, merged = 0;
         while (changed) {
@@ -353,7 +379,8 @@ window.Collider = (function () {
         console.log('[Collider] 本体の範囲:',
             (out.maxX - out.minX).toFixed(2) + ' x ' + (out.maxY - out.minY).toFixed(2) + ' x ' + (out.maxZ - out.minZ).toFixed(2) + ' m',
             '(パーセンタイル bbox ' + (fallback.maxX - fallback.minX).toFixed(2) + ' x ' + (fallback.maxY - fallback.minY).toFixed(2) + ' x ' + (fallback.maxZ - fallback.minZ).toFixed(2) + ' m,',
-            '密度しきい値 ' + T + ' 点/' + (cell * 100).toFixed(0) + 'cm セル, 成分 ' + (next - 1) + ', 取り込み ' + merged + ')');
+            '密度しきい値 ' + T + ' 点/' + (cell * 100).toFixed(0) + 'cm セル, 成分 ' + (next - 1) + ', 取り込み ' + merged +
+            ', 本体の選び方: ' + how + (best !== largest ? '（最大の塊とは別）' : '') + ')');
         return out;
     }
 
@@ -847,8 +874,14 @@ window.Collider = (function () {
          * @param {string} filename  (.ply または .splat)
          * @param {function} onProgress  (percent:number, msg:string) => void
          * @param {function} onDone      (err:Error|null) => void
+         * @param {Object}   [opts]
+         * @param {Array}    [opts.seeds]  本体を選ぶ基準点 [{x,y,z,label}]（ワールド座標、優先順）。
+         *        初期カメラなど「歩く部屋の中」と分かっている点を渡す。末尾に原点（PortalCam の
+         *        撮影開始位置）が自動で足され、どれも外れたら最大の塊を本体にする。
          */
-        buildAsync: function (buffer, filename, onProgress, onDone) {
+        buildAsync: function (buffer, filename, onProgress, onDone, opts) {
+            var buildSeeds = ((opts && opts.seeds) || []).slice();
+            buildSeeds.push({ x: 0, y: 0, z: 0, label: '原点（撮影開始位置）' });
             _ready = false;
             _voxels = null;
             _hmap   = null;
@@ -1095,7 +1128,7 @@ window.Collider = (function () {
                         setTimeout(coarseStep, 0);
                         return;
                     }
-                    var fb = denseClusterBounds(coarse, cnx, cny, cnz, COARSE_M, cMinX, cMinY, cMinZ, pctBounds);
+                    var fb = denseClusterBounds(coarse, cnx, cny, cnz, COARSE_M, cMinX, cMinY, cMinZ, pctBounds, buildSeeds);
                     coarse = null;
                     finishBounds(fb.minX, fb.maxX, fb.minY, fb.maxY, fb.minZ, fb.maxZ);
                 }

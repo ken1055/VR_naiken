@@ -155,6 +155,22 @@ function main() {
         if (stage !== lastMsg) { process.stderr.write('[' + String(pct).padStart(3) + '%] ' + stage + '\n'); lastMsg = stage; }
     }
 
+    // 本体（歩く部屋）を選ぶ基準点: 同じフォルダの <基準名>.json の初期カメラ。
+    // 無ければ collider.js が原点（PortalCam の撮影開始位置）→ 最大の塊の順で選ぶ。
+    var seeds = [];
+    var sceneJson = base + '.json';
+    if (fs.existsSync(sceneJson)) {
+        try {
+            var cam = JSON.parse(fs.readFileSync(sceneJson, 'utf8')).initialCamera;
+            if (cam && isFinite(cam.x) && isFinite(cam.y) && isFinite(cam.z)) {
+                seeds.push({ x: +cam.x, y: +cam.y, z: +cam.z, label: '初期カメラ（' + path.basename(sceneJson) + '）' });
+            }
+        } catch (e) {
+            console.error('注意: ' + sceneJson + ' を読めません（' + e.message + '）。原点を基準にします。');
+        }
+    }
+    console.log('本体の基準点: ' + (seeds.length ? seeds[0].label + ' (' + seeds[0].x + ', ' + seeds[0].y + ', ' + seeds[0].z + ')' : '原点（初期カメラ未保存）'));
+
     Collider.reset();
     Collider.buildAsync(
         ab,
@@ -197,7 +213,8 @@ function main() {
             console.log('  床を検出したセル ' + floorCells + '/' + cells +
                 ' (' + (floorCells / cells * 100).toFixed(1) + '%)  壁セル ' + wallCells);
             console.log('  所要 ' + ((Date.now() - t0) / 1000).toFixed(1) + ' 秒');
-        }
+        },
+        { seeds: seeds }
     );
 }
 
