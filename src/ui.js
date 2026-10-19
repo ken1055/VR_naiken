@@ -83,6 +83,40 @@ window.UI = (function () {
         '  font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase;',
         '  min-width: 100px; }',
 
+        /* もやの注意書き（3D 表示のときだけ。× で閉じる。操作説明はこの下にずらす）*/
+        '#vr-haze-notice {',
+        '  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);',
+        '  z-index: 112; width: max-content; max-width: min(440px, calc(100vw - 32px));',
+        '  display: flex; align-items: flex-start; gap: 10px;',
+        '  padding: 11px 10px 11px 14px; border-radius: 14px;',
+        '  background: rgba(0,4,12,0.94);',
+        '  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);',
+        '  border: 1px solid rgba(0,212,170,0.25);',
+        '  box-shadow: 0 8px 40px rgba(0,0,0,0.5);',
+        '  font-family: system-ui, sans-serif; }',
+        '#vr-haze-notice.hidden { display: none; }',
+        '#vr-haze-notice .vr-hn-icon {',
+        '  flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%;',
+        '  border: 1.5px solid #00D4AA; color: #00D4AA;',
+        '  font-size: 11px; font-weight: 700; line-height: 15px; text-align: center; }',
+        '#vr-haze-notice .vr-hn-text {',
+        '  color: rgba(240,244,248,0.88); font-size: 12.5px; line-height: 1.65; }',
+        '#vr-haze-notice .vr-hn-text strong { color: #00D4AA; font-weight: 700; }',
+        '#vr-haze-notice .vr-hn-close {',
+        '  flex: none; width: 32px; height: 32px; margin: -6px -4px -6px 0; border-radius: 50%;',
+        '  border: none; background: transparent; cursor: pointer;',
+        '  color: rgba(240,244,248,0.55); font-size: 18px; line-height: 32px; text-align: center;',
+        '  transition: background 0.15s, color 0.15s; }',
+        '#vr-haze-notice .vr-hn-close:hover {',
+        '  background: rgba(0,212,170,0.15); color: #00D4AA; }',
+        /* 360度写真にはもやが出ないので隠す */
+        'body.pano-mode #vr-haze-notice { display: none !important; }',
+        /* スマホ: 右上の場所メニュー（40px）と重ならないよう左寄せ */
+        '@media (max-width: 600px) {',
+        '  #vr-haze-notice { left: 16px; right: 72px; transform: none;',
+        '    width: auto; max-width: none; }',
+        '}',
+
         /* 操作方法ボタン（「?」アイコンだと何のボタンか伝わらないので文字で出す）*/
         '#vr-help-btn {',
         '  position: fixed; bottom: 20px; right: 20px; z-index: 120;',
@@ -290,6 +324,9 @@ window.UI = (function () {
     var _elToastCont   = null;
     var _elHelpOverlay = null;
     var _elHelpBtn     = null;
+    var _elHazeNotice  = null;
+    var _hazeDismissed = false;   // × で閉じたらページを開き直すまで出さない
+    var _topInset      = null;    // 上部中央の表示の上端 (px)。null = CSS 既定。admin.html がバーの下へずらす
     var _helpTimer     = null;
     var _helpPinned    = false;   // 「操作方法」ボタンから開いた状態（自動で閉じない）
     var _elStatusBar      = null;
@@ -359,6 +396,29 @@ window.UI = (function () {
         else showHelp(true);
     }
 
+    // ---- もやの注意書き ----
+    // 上部中央に出す。表示中は同じ場所に出る操作説明をその下へずらす。
+    function showHazeNotice() {
+        if (!_elHazeNotice || _hazeDismissed) return;
+        _elHazeNotice.classList.remove('hidden');
+        layoutTop();
+    }
+
+    function hideHazeNotice() {
+        if (!_elHazeNotice) return;
+        _elHazeNotice.classList.add('hidden');
+        layoutTop();
+    }
+
+    function layoutTop() {
+        if (!_elHelpOverlay) return;
+        var inset = _topInset === null ? '' : _topInset + 'px';   // null = CSS の top: 20px
+        if (_elHazeNotice) _elHazeNotice.style.top = inset;
+        var r = _elHazeNotice ? _elHazeNotice.getBoundingClientRect() : null;
+        // 非表示・360度モード中は高さ 0 になるので、操作説明は注意書きの位置（上端）に戻す
+        _elHelpOverlay.style.top = (r && r.height > 0) ? Math.round(r.bottom + 8) + 'px' : inset;
+    }
+
     return {
         init: function (app, callbacks) {
             _callbacks = callbacks || {};
@@ -399,6 +459,26 @@ window.UI = (function () {
             _elHelpOverlay = el('div', { id: 'vr-help-overlay',
                 innerHTML: '<table>' + _helpRows.join('') + '</table>' });
             root.appendChild(_elHelpOverlay);
+
+            // もやの注意書き（3D シーンの読み込み完了時に showHazeNotice で出す）
+            var hazeClose = el('button', { className: 'vr-hn-close', title: '閉じる',
+                textContent: '×' });
+            hazeClose.setAttribute('aria-label', '注意書きを閉じる');
+            hazeClose.addEventListener('click', function () {
+                _hazeDismissed = true;   // 同じページ内で部屋を移っても再表示しない
+                hideHazeNotice();
+            });
+            _elHazeNotice = el('div', { id: 'vr-haze-notice', className: 'hidden' }, [
+                el('div', { className: 'vr-hn-icon', textContent: 'i' }),
+                el('div', { className: 'vr-hn-text', innerHTML:
+                    '3Dデータの性質上、画面の一部に<strong>もや</strong>がかかって見えることがあります。' +
+                    '<strong>実際の物件にもやはありません。</strong>' }),
+                hazeClose,
+            ]);
+            _elHazeNotice.setAttribute('role', 'note');
+            root.appendChild(_elHazeNotice);
+            window.addEventListener('resize', layoutTop);
+            layoutTop();   // init 前に setTopInset が呼ばれていた場合に反映
 
             _elHelpBtn = el('button', { id: 'vr-help-btn', title: '操作方法を表示',
                 textContent: '操作方法' });
@@ -672,6 +752,11 @@ window.UI = (function () {
         },
 
         showHelp:         function ()    { showHelp(); },
+        /** もやの注意書きを出す（3D シーン読み込み完了時。× で閉じた後は出さない） */
+        showHazeNotice:   function ()    { showHazeNotice(); },
+        hideHazeNotice:   function ()    { hideHazeNotice(); },
+        /** 上部中央の表示（注意書き・操作説明）の上端を px で指定（null で既定に戻す） */
+        setTopInset:      function (px)  { _topInset = (px == null) ? null : Math.max(0, Math.round(px)); layoutTop(); },
         showTooltip:      function (msg) { this.showInfo(msg); },
         updateCallbacks:  function (cb)  { Object.assign(_callbacks, cb); },
 
@@ -681,6 +766,7 @@ window.UI = (function () {
         setPanoMode: function (on) {
             if (on) document.body.classList.add('pano-mode');
             else    document.body.classList.remove('pano-mode');
+            layoutTop();   // 360度では注意書きが隠れるので操作説明の位置を戻す
         },
 
         /**

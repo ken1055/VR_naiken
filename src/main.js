@@ -403,6 +403,7 @@
             UI.hideLoading();
             UI.hideEmptyState();
             UI.showHelp();
+            UI.showHazeNotice();   // 3D だけ（360度写真の読込経路では呼ばない）
             if (showShare) UI.showShareButton();
             // KPI 計測（index.html で GA4 有効時のみ送信される。admin では no-op）
             if (window._track) window._track('scene_loaded', {
@@ -599,6 +600,7 @@
             UI.hideLoading();
             UI.hideEmptyState();
             UI.showHelp();
+            UI.showHazeNotice();   // 3D だけ（360度写真の読込経路では呼ばない）
 
             // カメラ位置 JSON・テレポートを適用（管理者状態は常に同期）
             if (jsonFile) {
